@@ -13,6 +13,8 @@ Build and test your three tools in `tools.py` first. Then come here.
     python agent.py          runs both example paths below
 """
 
+import re
+
 import config
 import trace
 from tools import search_listings, suggest_outfit, create_fit_card
@@ -106,10 +108,115 @@ def run_agent(query: str, wardrobe: dict) -> dict:
         than a stack trace. The import is already at the top of this file.
     """
     session = new_session(query, wardrobe)
+    next_step = "parse"
+    count = 0
 
-    # TODO: delete these two lines and build the loop.
-    session["error"] = "The planning loop isn't built yet — see the TODO in agent.py."
+    while next_step != "done":
+        count += 1
+        trace.check_iterations(count)
+
+        if next_step == "parse":
+            session["parsed"] = parse_query(session["query"])
+            next_step = "search"
+
+        elif next_step == "search":
+            parsed = session["parsed"]
+            session["search_results"] = search_listings(
+                parsed["description"], parsed["size"], parsed["max_price"]
+            )
+            # THE BRANCH: nothing found means stop here, before any model call.
+            if not session["search_results"]:
+                session["error"] = _no_results_message(parsed)
+                next_step = "done"
+            else:
+                session["selected_item"] = session["search_results"][0]
+                next_step = "outfit"
+
+        elif next_step == "outfit":
+            session["outfit_suggestion"] = suggest_outfit(
+                session["selected_item"], session["wardrobe"]
+            )
+            next_step = "fit_card"
+
+        elif next_step == "fit_card":
+            session["fit_card"] = create_fit_card(
+                session["outfit_suggestion"], session["selected_item"]
+            )
+            next_step = "done"
+
     return session
+
+
+# ── query parsing (regex, no model call) ──────────────────────────────────────
+
+_PRICE = re.compile(
+    r"\b(?:under|below|less than|max|up to|<)?\s*\$\s*(\d+(?:\.\d+)?)"
+    r"|\b(?:under|below|less than|max|up to)\s+(\d+(?:\.\d+)?)\b",
+    re.I,
+)
+_SIZE = re.compile(
+    r"\bsize\s+((?:us|w)\s*\d+(?:\.\d+)?(?:\s*l\d+)?|one size|[xsml/]{1,5}|\d+(?:\.\d+)?)\b",
+    re.I,
+)
+
+
+def parse_query(query: str) -> dict:
+    """
+    Pull a price ceiling and a size out of the query with regex. Whatever is
+    left over is the description.
+
+        "vintage graphic tee under $30, size M"
+          -> {"description": "vintage graphic tee", "size": "M", "max_price": 30.0}
+    """
+    text = query
+    max_price = None
+    size = None
+
+    price = _PRICE.search(text)
+    if price:
+        max_price = float(price.group(1) or price.group(2))
+        text = text[: price.start()] + " " + text[price.end():]
+
+    size_match = _SIZE.search(text)
+    if size_match:
+        size = size_match.group(1).upper()
+        text = text[: size_match.start()] + " " + text[size_match.end():]
+
+    description = " ".join(re.sub(r"[,;]", " ", text).split())
+    return {"description": description, "size": size, "max_price": max_price}
+
+
+def _no_results_message(parsed: dict) -> str:
+    """
+    Say what the user could change, not just that nothing matched. Re-runs the
+    search with each filter dropped so the advice is about what would actually
+    find something.
+    """
+    description, size, max_price = (
+        parsed["description"], parsed["size"], parsed["max_price"]
+    )
+    asked = f'"{description}"'
+    if size:
+        asked += f" in size {size}"
+    if max_price is not None:
+        asked += f" under ${max_price:.0f}"
+
+    tips = []
+    if max_price is not None:
+        without_price = search_listings(description, size, None)
+        if without_price:
+            cheapest = min(item["price"] for item in without_price)
+            tips.append(f"raise your price limit to ${cheapest:.0f} or more")
+    if size:
+        if search_listings(description, None, max_price):
+            tips.append(f"drop the size {size} filter")
+    if not tips:
+        tips.append(
+            "use different words for the item — the listings use terms like "
+            "tee, hoodie, jeans, cargo pants, jacket, boots and bag"
+        )
+
+    return f"Nothing matched {asked}. Try: " + "; or ".join(tips) + "."
 
 
 # ── running it directly ───────────────────────────────────────────────────────

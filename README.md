@@ -104,9 +104,9 @@
 
 **Where it lives:** `agent.py::run_agent`
 
-**How the query is parsed:** <!-- regex, string splitting, or asking the model — say which -->
+**How the query is parsed:** Regex, no model call — `agent.py::parse_query`. A price like `under $30`, `$30`, `max $40` or `under 30` becomes `max_price`; `size M`, `size US 8` or `size W30 L30` becomes `size`; whatever text is left is the `description`.
 
-**What moves through the session:** <!-- which fields, in what order -->
+**What moves through the session:** `query` → `parsed` (description, size, max_price) → `search_results` (up to 10 listing dicts) → either `error` (and stop) or `selected_item` (the first result) → `outfit_suggestion` → `fit_card`. Each tool reads its inputs back out of the session, not from the previous call's return value.
 
 ---
 
@@ -120,8 +120,23 @@
 **One full query**
 
 ```
-$ python app.py ask '...'
+$ python app.py ask 'vintage graphic tee under $30'
+  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
 
+  Outfit:   Outfit one pairs the Y2K baby tee with baggy straight-leg jeans, dark wash for a classic 2000s streetwear look. Add chunky white sneakers and the black crossbody bag to complete the casual, nostalgic everyday style.
+
+Outfit two combines the Y2K baby tee with wide-leg khaki trousers for a softer earth-toned mix of cottagecore and minimal aesthetics. Layer the vintage black denim jacket over top and finish the outfit with black combat boots to add a subtle edge.
+
+  Fit card: Scored this dream Y2K baby tee on Depop for just $18 and I’m obsessed with the butterfly print. Gives me total 2000s streetwear energy when paired with baggy jeans, but looks just as good dressed down with khakis.
+```
+
+And a query that matches nothing — it stops before `suggest_outfit`, makes no model calls, and `fit_card` stays `None`:
+
+```
+$ python app.py ask 'designer ballgown size XXS under $5'
+  Nothing matched "designer ballgown" in size XXS under $5. Try: use different words for the item — the listings use terms like tee, hoodie, jeans, cargo pants, jacket, boots and bag.
+
+0 model calls this session
 ```
 
 **The three tools, tested one at a time**
