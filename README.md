@@ -41,7 +41,15 @@
 
 <!-- Three or four sentences: what a user asks for, and what they get back. -->
 
-
+A user types what secondhand item they're after in plain language, like
+`vintage graphic tee under $30` or `denim jacket size S`. FitFindr searches 40
+thrift listings from Depop, thredUp and Poshmark for the best match within
+that price and size, then suggests one or two outfits built around it using
+clothes from the user's saved wardrobe (or general styling ideas if the
+wardrobe is empty). Finally it writes a short caption they could post about the
+find, mentioning the item, its price and the platform. If nothing matches, it
+stops before calling the model and tells the user what to change — raise the
+price limit, drop the size, or use different words.
 
 ---
 
@@ -180,17 +188,17 @@ Can't write a fit card for Vintage Levi's 501 Jeans — Medium Wash: no outfit s
      "I gave Claude my search_listings spec. It returned None on no match
      instead of an empty list, so I changed it" is the level we want. -->
 
-**Moment 1**
+**Moment 1 — testing my criteria**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- _What I asked for:_ I gave Claude my three draft criteria (state, fit card, my choice) and asked it to make sure they were valid and checkable. My drafts were things like "the fit must be referred to a reasonable size if not it's wrong" and "the category for each must be a suitable category".
+- _What came back:_ It said none of the three could be tested from the sentence alone: "reasonable size" could mean caption length or clothing size, "suitable category" had no definition, and "in the original data set" didn't say what to compare. It suggested comparing the listing `id` at each step, a sentence and character limit, and a fixed word → category map using the five categories actually in `listings.json`. It also pointed out that passing the item through the session is plain code with no model, so 4 of 5 was too easy a target for criterion 3.
+- _What I changed:_ Criterion 3 now compares `id`s and the target went up to 5 of 5. Criterion 4 became 2–4 sentences and under 300 characters (matching what my Tool Inventory promises). Criterion 5 now names the expected category for each of five query words. I had Claude draft the "why this target" reasons from my tool specs, then read them to check I could defend each one.
 
-**Moment 2**
+**Moment 2 — tools.py wouldn't import**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- _What I asked for:_ I asked Claude to build the three tools in `tools.py` to match the specs I'd already written in my Tool Inventory.
+- _What came back:_ The first version didn't run: `python -c "import tools"` failed with `SyntaxError: unterminated f-string literal (detected at line 176)`. The script that wrote the file had turned the `\n` escapes inside the prompt strings into real line breaks, which broke the f-strings.
+- _What I changed:_ I restored the stub with `git checkout tools.py` and rebuilt it with smaller edits, one function at a time. Then I tested each tool on its own from the terminal before wiring the loop. The search results also showed Low-Rise Cargo Pants coming back for "graphic tee", which I kept as a known weakness of keyword matching for unit 4.
 
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
@@ -211,12 +219,12 @@ Can't write a fit card for Vintage Levi's 501 Jeans — Medium Wash: no outfit s
      into results/. Paste it here and fill in the verdicts. -->
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
-|---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| --------- | ------ | ----- | ----- | ----- | ----- | ----- | ------- |
+| 1.        |        |       |       |       |       |       |         |
+| 2.        |        |       |       |       |       |       |         |
+| 3.        |        |       |       |       |       |       |         |
+| 4.        |        |       |       |       |       |       |         |
+| 5.        |        |       |       |       |       |       |         |
 
 **Real output from one try**, pasted as text, naming the file and function
 that produced it:
@@ -245,17 +253,15 @@ that produced it:
      Look for a pattern. Three misses on the same tool is one problem, not
      three. -->
 
-| # | Criterion | Target | Verdict | How I decided |
-|---|---|---|---|---|
-| 1 |  |  |  |  |
-| 2 |  |  |  |  |
-| 3 |  |  |  |  |
-| 4 |  |  |  |  |
-| 5 |  |  |  |  |
+| #   | Criterion | Target | Verdict | How I decided |
+| --- | --------- | ------ | ------- | ------------- |
+| 1   |           |        |         |               |
+| 2   |           |        |         |               |
+| 3   |           |        |         |               |
+| 4   |           |        |         |               |
+| 5   |           |        |         |               |
 
 **Diagnoses**
-
-
 
 ---
 
@@ -288,8 +294,6 @@ behaved differently afterwards. If the rewire didn't work, say exactly where it
 broke — the error text and the last thing that worked. That earns the point in
 full. -->
 
-
-
 ---
 
 ## The Improvement
@@ -306,19 +310,17 @@ full. -->
 ### Run Log — After
 
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
-|---|---|---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |  |  |
+| --------- | ------ | ----- | ----- | ----- | ----- | ----- | ------- |
+| 1.        |        |       |       |       |       |       |         |
+| 2.        |        |       |       |       |       |       |         |
+| 3.        |        |       |       |       |       |       |         |
+| 4.        |        |       |       |       |       |       |         |
+| 5.        |        |       |       |       |       |       |         |
 
 **Did it help, and how do I know:**
 
 <!-- If it made things worse, say that. Honestly reported, that earns full
      credit and is more interesting than one that worked. -->
-
-
 
 ---
 
@@ -327,8 +329,6 @@ full. -->
 <!-- For each criterion still missed: what you'd do, and why you stopped where
      you did. "I ran out of time" is fine if it's true. Pretending nothing is
      left is not. -->
-
-
 
 <!-- ═════════════════════════════════════════════════════════════════════
 
