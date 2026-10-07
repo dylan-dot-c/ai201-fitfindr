@@ -127,18 +127,31 @@ $ python app.py ask '...'
 **The three tools, tested one at a time**
 
 ```
-$ python -c "from tools import search_listings; print(search_listings('graphic tee', max_price=30))"
+$ python -c "from tools import search_listings; r=search_listings('graphic tee', max_price=30); print(len(r), [(x['title'],x['price'],x['size']) for x in r])"
+6 [('Y2K Baby Tee — Butterfly Print', 18.0, 'S/M'), ('Graphic Tee — 2003 Tour Bootleg Style', 24.0, 'L'), ('Mesh Long-Sleeve Top — Black', 15.0, 'S/M'), ('Vintage Band Tee — Faded Grey', 19.0, 'L'), ('Low-Rise Cargo Pants — Khaki', 27.0, 'W29'), ('Vintage Graphic Hoodie — Faded Black', 26.0, 'L')]
 
+$ python -c "from tools import search_listings; print(search_listings('ballgown tiara', max_price=5))"
+[]
 ```
 
 ```
-$ python -c "from tools import suggest_outfit; ..."
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_example_wardrobe, load_listings; print(suggest_outfit(load_listings()[0], get_example_wardrobe()))"
+Outfit 1: Pair the vintage Levi's with the white ribbed tank top for a classic, fitted silhouette. Layer the vintage black denim jacket on top for a cohesive denim-on-denim look. Finish the outfit with the chunky white sneakers and the black crossbody bag for an effortless, everyday streetwear style.
 
+Outfit 2: Combine the medium wash jeans with the oversized grey crewneck sweatshirt for a relaxed, cozy aesthetic. Cinch the waist using the brown leather belt to add definition, and step into the black combat boots to introduce a touch of grunge edge. Bring the black crossbody bag along to complete this comfortable, casual ensemble.
+
+$ python -c "from tools import suggest_outfit; from utils.data_loader import get_empty_wardrobe, load_listings; print(suggest_outfit(load_listings()[0], get_empty_wardrobe()))"
+No saved wardrobe yet — general styling ideas: For a casual daytime look, pair the vintage Levi's with a simple white ribbed tank top or a fitted black baby tee. Add a classic black leather belt, a pair of worn-in canvas sneakers like white Converse or black Vans, and a canvas tote bag for an effortless, streetwear-inspired aesthetic. [...]
 ```
 
 ```
-$ python -c "from tools import create_fit_card; ..."
+$ AI201_CACHE=0 python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('jeans and white sneakers', load_listings()[0]))"   # run 3 times
+Scored these vintage Levi's 501 jeans on Depop for just $38 and I am obsessed. The medium wash indigo has the ultimate broken-in streetwear vibe. Paired them with crisp white sneakers for an effortless classic look.
+Scored these vintage Levi's 501 jeans on depop for just $38 and I am obsessed. The medium wash is so effortlessly 90s. Paired them with crisp white sneakers for the ultimate everyday streetwear vibe.
+Found these vintage Levi's 501 jeans on Depop for just $38 and I am obsessed. The medium wash indigo gives off the ultimate effortless streetwear vibe. Paired them with crisp white sneakers and honestly, nothing beats classic denim that actually fits right.
 
+$ python -c "from tools import create_fit_card; from utils.data_loader import load_listings; print(create_fit_card('   ', load_listings()[0]))"
+Can't write a fit card for Vintage Levi's 501 Jeans — Medium Wash: no outfit suggestion was given.
 ```
 
 ---
