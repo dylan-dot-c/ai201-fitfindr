@@ -366,13 +366,68 @@ leather bag       -> lst_039  Mini Shoulder Bag — Tan Leather        accessori
 
 | #   | Criterion | Target | Verdict | How I decided |
 | --- | --------- | ------ | ------- | ------------- |
-| 1   |           |        |         |               |
-| 2   |           |        |         |               |
-| 3   |           |        |         |               |
-| 4   |           |        |         |               |
-| 5   |           |        |         |               |
+| 1   | A matching query completes all three tools | 4 of 5 | **MISSED (0/5)** | No run of `vintage graphic tee under $30` returned a fit card. Every one stopped at `suggest_outfit` on a 503 or 504. 0 is below 4. |
+| 2   | An impossible query stops before the second tool | 5 of 5 | **MET (5/5)** | All five stopped after `search_listings` returned `[]`. `suggest_outfit` is absent from every trace, 0 model calls were made, and the message names what to change. |
+| 3   | The item search found is the item the next tools receive | 5 of 5 | **MISSED (4/5)** | Four queries showed the same `id` going into both later tools. Platform sneakers never reached `create_fit_card` in five runs, so for that query the criterion's condition was never shown to hold. 5 of 5 means a single unproven query is a miss. |
+| 4   | The fit card is a postable length | 4 of 5 | **MISSED (1/5)** | The criterion asks for a postable card on five runs of the same item. Four of the five runs produced no card, and no card is not a postable card. The one card that was produced passed (3 sentences, 199 characters). |
+| 5   | Search returns the right category for the item type | 4 of 5 | **MET (5/5)** | The top result's `category` matched the expected one for all five item types, identically in all five runs of each. |
 
 **Diagnoses**
+
+**The pattern: criteria 1, 3 and 4 are one miss, not three.** All of them
+missed for the same reason, at the same place: **the model call, inside
+`generate.py::generate`**.
+
+- *What happened:* 93 model calls were made and 49 failed (53%). The errors
+  were 36 × `503 UNAVAILABLE` ("high demand"), 9 × `504 DEADLINE_EXCEEDED` and
+  4 × connection failure. By step, 37 failed in `suggest_outfit` and 12 in
+  `create_fit_card`.
+- *The mechanism:* `generate()` has a retry loop (`MAX_RETRIES = 5`), but it
+  only retries when the error text looks like a rate limit (`429`, "resource
+  exhausted", "rate limit"). A 503 or 504 doesn't match, so it raises
+  `ModelUnavailable` on the **first** attempt. The eval log contains **zero**
+  `[rate limit]` retry lines. A temporary overload that would likely have
+  cleared in a few seconds is treated the same as a revoked API key.
+- *What did NOT fail:* the tools' logic, the branch and the session. The
+  `ModelUnavailable` handler in `run_agent` did its job in all 49 cases: no
+  crashes, the found item kept, and a message saying what to do. Every
+  `id` matched across steps (0 mismatches in 65 + 28 handoffs), and all 16
+  fit cards that were produced met criterion 4's length rule. The failures
+  are in *availability*, not in what the agent does when the model answers.
+
+**Criterion 1.** Place: the model call, through `suggest_outfit`. Mechanism: as
+above. Each run makes two model calls, and both must succeed. With about half of
+calls failing and no retry, the chance of a run completing was roughly
+0.47 × 0.47 ≈ 22%. The data agrees: 16 of the 65 runs that should have completed
+did (25%). This query happened to draw 0 of 5.
+
+**Criterion 3.** Place: the session criterion was blocked by the model call, not
+by the session. Mechanism: the only failing query (platform sneakers) stopped at
+`suggest_outfit` all five times, so `create_fit_card` never received an `id` to
+check. The criterion as written can't separate "the session lost the item"
+from "the model was down". That is a measurement problem, so I've written a
+revision under it in `criteria.md`. The verdict above stays on the original
+wording.
+
+**Criterion 4.** Place: the model call, through `suggest_outfit` (tries 1–3)
+and `create_fit_card` (try 4). Mechanism: same. `create_fit_card` only runs
+after `suggest_outfit` succeeds, so a card needs two successful calls. When the
+model did answer, the prompt held: every one of the 16 cards across the whole
+eval was 2–4 sentences and 160–222 characters.
+
+**Criterion 5: met, and the target was too low.** Search is deterministic and
+these five queries have plain category words in them, so 4 of 5 was easy to hit.
+The run did expose a weakness this criterion can't see. For `vintage band tee`
+the top result was "Graphic Tee — 2003 Tour Bootleg Style", not "Vintage Band
+Tee — Faded Grey". They tie on keyword score and ties keep data order. The
+category was right, but the more exact item lost. I'd tighten this to "the top
+result's *title* contains the item word, 5 of 5", which would catch ranking
+mistakes, not just category ones. Also, `lst_013` "90s Silk Slip Dress" is
+stored with `category: "bottoms"` in the data, so a dress query would fail a
+category check because of the data, not the search.
+
+**Criterion 2: met, and it should be.** The empty-search path never touches
+the model, so the outage that hit everything else couldn't reach it.
 
 ---
 

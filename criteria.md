@@ -58,6 +58,21 @@ Moving the item through the session is plain code with no model involved: take
 changes between steps, something overwrote the session or read the wrong index,
 and that's a bug every time, so I'm not allowing any misses.
 
+> **Revised in unit 4:** For 5 queries that match at least one listing, in
+> every run that reaches `create_fit_card` (whether or not the model call then
+> succeeds), the `id` in `session["selected_item"]` is the same `id` passed
+> into `suggest_outfit` and into `create_fit_card`, and that `id` exists in
+> `data/listings.json`. Each query must have at least one such run out of its
+> five, and a query that has none is re-run until it does. 5 of 5 queries.
+>
+> **Why revised:** This is a state criterion, but as written it could only be
+> checked when both model calls had already succeeded, because `create_fit_card`
+> runs after `suggest_outfit`. In the before-run, platform sneakers failed it
+> only because Gemini returned 503 on all five `suggest_outfit` calls. The
+> session never got a chance to be wrong. The original was measuring model
+> uptime, not the session. The target stays 5 of 5, and the before-run
+> verdict stays MISSED (4/5) under the original wording.
+
 ---
 
 ## 4. The fit card is a postable length
