@@ -333,11 +333,18 @@ def generate(
                 or "resource" in message and "exhaust" in message
                 or "rate" in message and "limit" in message
             )
-            if not rate_limited:
+            # 503 "high demand" and 504 "deadline exceeded" are the service
+            # being overloaded for a moment, not a bad key — worth waiting out.
+            overloaded = (
+                "503" in message or "unavailable" in message
+                or "504" in message or "deadline_exceeded" in message
+            )
+            if not (rate_limited or overloaded):
                 raise ModelUnavailable(_explain(exc)) from exc
             backoff = _retry_delay(exc, attempt)
+            label = "rate limit" if rate_limited else "overloaded"
             print(
-                f"  [rate limit] service pushed back. Waiting {backoff:.0f}s "
+                f"  [{label}] service pushed back. Waiting {backoff:.0f}s "
                 f"(attempt {attempt + 1} of {config.MAX_RETRIES}). This is "
                 f"the limiter doing its job, not a bug.",
                 file=sys.stderr,
@@ -345,6 +352,9 @@ def generate(
             )
             time.sleep(backoff)
 
+    if not rate_limited:
+        # Still overloaded after every retry: report it, don't crash the run.
+        raise ModelUnavailable(_explain(last_error)) from last_error
     raise RuntimeError(
         f"Still rate limited after {config.MAX_RETRIES} attempts. Wait a "
         f"minute and try again — your key is fine.\nLast error: {last_error}"
