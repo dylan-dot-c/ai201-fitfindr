@@ -17,8 +17,9 @@ import re
 
 import config
 import trace
-from tools import search_listings, suggest_outfit, create_fit_card
+from tools import suggest_outfit, create_fit_card
 from generate import ModelUnavailable
+from mcp_client import call_tool
 
 
 # ── session state ─────────────────────────────────────────────────────────────
@@ -121,7 +122,7 @@ def run_agent(query: str, wardrobe: dict) -> dict:
 
         elif next_step == "search":
             parsed = session["parsed"]
-            session["search_results"] = search_listings(
+            session["search_results"] = _search(
                 parsed["description"], parsed["size"], parsed["max_price"]
             )
             # THE BRANCH: nothing found means stop here, before any model call.
@@ -145,6 +146,15 @@ def run_agent(query: str, wardrobe: dict) -> dict:
             next_step = "done"
 
     return session
+
+
+def _search(description: str, size: str | None, max_price: float | None) -> list[dict]:
+    """search_listings, called through the MCP server rather than directly."""
+    return call_tool("search_listings", {
+        "description": description,
+        "size": size,
+        "max_price": max_price,
+    })
 
 
 # ── query parsing (regex, no model call) ──────────────────────────────────────
@@ -203,12 +213,12 @@ def _no_results_message(parsed: dict) -> str:
 
     tips = []
     if max_price is not None:
-        without_price = search_listings(description, size, None)
+        without_price = _search(description, size, None)
         if without_price:
             cheapest = min(item["price"] for item in without_price)
             tips.append(f"raise your price limit to ${cheapest:.0f} or more")
     if size:
-        if search_listings(description, None, max_price):
+        if _search(description, None, max_price):
             tips.append(f"drop the size {size} filter")
     if not tips:
         tips.append(
