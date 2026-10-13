@@ -544,9 +544,38 @@ And during a real 503:
 
      `python run_eval.py --label after` -->
 
-**What I changed:**
+**What I changed:** One thing: `generate.py::generate` now retries Gemini's
+overload errors. Before, its retry loop only fired on rate-limit errors (`429`,
+"resource exhausted", "rate limit"). Any other error, including a temporary
+`503 UNAVAILABLE` or `504 DEADLINE_EXCEEDED`, raised `ModelUnavailable` on the
+first attempt. Now an error containing `503`, `unavailable`, `504` or
+`deadline_exceeded` goes through the same backoff as a rate limit: up to
+`MAX_RETRIES` (5) attempts, waiting 1, 2, 4, 8 and 16 seconds. If it is still
+overloaded after the last attempt, it raises `ModelUnavailable`, which
+`run_agent` already handles. Before, an exhausted retry raised `RuntimeError`,
+which nothing caught, so widening the retry check without this fix would have
+turned "a message" into "a crash". Nothing else changed: same prompts, tools,
+loop, scenarios, temperature and five tries.
 
-**Which failure it was meant to fix:**
+I checked it with a fake client before the real run. Two 503s followed by a
+success returned the answer after 1s and 2s waits. A 503 on every attempt
+waited out all five backoffs and raised `ModelUnavailable`, not a crash. Errors
+that match neither check, such as a rejected key or a connection failure, still
+fail on the first attempt as before. That follows from the code; I didn't
+re-trigger them after the change. (Commit `deb50f8`.)
+
+**Which failure it was meant to fix:** The one pattern behind criteria 1, 3 and
+4 (see Diagnoses). 49 of 93 model calls failed in the before run: 36 × 503,
+9 × 504, 4 × connection failure. None were retried (zero retry lines in the
+log). This change targets the 45 that were 503/504. It does nothing for the 4
+connection failures, so if they recur they will still stop a run. That's
+deliberate, to keep this to one change.
+
+**Why this and not something else:** The diagnosis found nothing wrong in the
+tools, the branch, the session or the prompts. 0 `id` mismatches, and all 16
+fit cards were within the length rule. Rewriting a prompt or adding a branch
+would have changed something that wasn't failing. The only thing between the
+agent and a passing run was a model call giving up on its first try.
 
 ### Run Log — After
 
