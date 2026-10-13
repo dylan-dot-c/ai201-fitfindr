@@ -253,7 +253,12 @@ def _get_client():
                 "Copy .env.example to .env and paste your key in, then try "
                 "again. `python test.py` will confirm it's working."
             )
-        _client = genai.Client(api_key=key)
+        # A call that never comes back would hang the agent forever, so give
+        # up after a minute and let the caller report the model as unreachable.
+        _client = genai.Client(
+            api_key=key,
+            http_options=genai.types.HttpOptions(timeout=config.REQUEST_TIMEOUT_MS),
+        )
     return _client
 
 

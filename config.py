@@ -86,6 +86,10 @@ REQUESTS_PER_MINUTE = 15
 SESSION_REQUEST_BUDGET = 300
 MAX_RETRIES = 5
 
+# How long one model call may take before it's treated as unreachable. Without
+# this, a request the service never answers hangs the whole run.
+REQUEST_TIMEOUT_MS = 60_000
+
 CACHE_DIR = ROOT / ".cache"
 
 

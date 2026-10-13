@@ -186,6 +186,11 @@ def _model_down_message(item: dict, what: str, exc: ModelUnavailable) -> str:
             "now (the service returned 503, high demand). Nothing is wrong with "
             "your setup — wait a minute and ask again."
         )
+    if "timed out" in reason.lower():
+        return (
+            found + f"but couldn't write {what}: the AI model didn't answer "
+            "within a minute. Check your internet connection, then ask again."
+        )
     return found + f"but couldn't write {what}. {reason}"
 
 

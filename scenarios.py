@@ -35,18 +35,38 @@ SCENARIOS = [
         "wardrobe": "empty",
         "criterion": None,
     },
-    # TODO: add what your criteria 3, 4 and 5 need.
-    #
-    # Set "criterion" to the number in criteria.md that the scenario tests.
-    # "criterion": None means a diagnostic run — useful to have, but it isn't
-    # one of your five, and run_eval.py marks it as such in the table.
-    #
-    # For a state criterion, any normal query works — what you're checking is
-    # what ends up in the session, not what the user typed.
-    #
-    # For a fit-card criterion, you probably want the SAME query listed more
-    # than once, or several different items, depending on what your criterion
-    # actually says.
+    # Criterion 3 — the item search found is the item the next tools receive.
+    # The criterion is "for 5 queries", so it's five different matching
+    # queries, one scenario each. Try N in the README row is query N.
+    {"name": "state: track jacket", "query": "90s track jacket size M",
+     "wardrobe": "example", "criterion": 3},
+    {"name": "state: slip dress", "query": "silk slip dress under $40",
+     "wardrobe": "example", "criterion": 3},
+    {"name": "state: platform sneakers", "query": "platform sneakers size 8",
+     "wardrobe": "example", "criterion": 3},
+    {"name": "state: denim jacket", "query": "denim jacket under $50",
+     "wardrobe": "example", "criterion": 3},
+    {"name": "state: cargo pants", "query": "cargo pants under $40",
+     "wardrobe": "example", "criterion": 3},
+
+    # Criterion 4 — the fit card is a postable length. The SAME item five
+    # times (run_eval's five tries), so only the model's wording varies.
+    {"name": "fit card length, same item", "query": "baggy jeans",
+     "wardrobe": "example", "criterion": 4},
+
+    # Criterion 5 — top result's category matches the item type asked for.
+    # One query per item type. Search is deterministic, so all five tries of
+    # a query should agree; Try N in the README row is query N.
+    {"name": "category: jacket", "query": "black jacket",
+     "wardrobe": "example", "criterion": 5},
+    {"name": "category: jeans", "query": "baggy jeans",
+     "wardrobe": "example", "criterion": 5},
+    {"name": "category: tee", "query": "vintage band tee",
+     "wardrobe": "example", "criterion": 5},
+    {"name": "category: sneakers", "query": "white sneakers",
+     "wardrobe": "example", "criterion": 5},
+    {"name": "category: bag", "query": "leather bag",
+     "wardrobe": "example", "criterion": 5},
 ]
 
 WARDROBES = ("example", "empty")
