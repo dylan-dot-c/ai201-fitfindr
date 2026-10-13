@@ -218,19 +218,130 @@ Can't write a fit card for Vintage Levi's 501 Jeans — Medium Wash: no outfit s
      `python run_eval.py --label before` runs everything and writes the table
      into results/. Paste it here and fill in the verdicts. -->
 
+Produced by `python run_eval.py --label before` (`run_eval.py::main`, which calls
+`agent.py::run_agent`), caching off, `TEMPERATURE` 0.9. Full output:
+[`results/run_2026-10-13_1003_before.md`](results/run_2026-10-13_1003_before.md).
+14 scenarios × 5 tries = 70 runs, 93 model calls.
+
 | Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
 | --------- | ------ | ----- | ----- | ----- | ----- | ----- | ------- |
-| 1.        |        |       |       |       |       |       |         |
-| 2.        |        |       |       |       |       |       |         |
-| 3.        |        |       |       |       |       |       |         |
-| 4.        |        |       |       |       |       |       |         |
-| 5.        |        |       |       |       |       |       |         |
+| 1. A matching query completes all three tools | 4 of 5 | FAIL | FAIL | FAIL | FAIL | FAIL | MISSED (0/5) |
+| 2. An impossible query stops before the second tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| 3. The item search found is the item the next tools receive | 5 of 5 | PASS | PASS | FAIL | PASS | PASS | MISSED (4/5) |
+| 4. The fit card is a postable length | 4 of 5 | FAIL | FAIL | FAIL | FAIL | PASS | MISSED (1/5) |
+| 5. Search returns the right category for the item type | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
 
-**Real output from one try**, pasted as text, naming the file and function
-that produced it:
+**How each row was scored**
+
+- **1**: `vintage graphic tee under $30`, five runs. PASS = no early stop and
+  `create_fit_card` returned a card.
+- **2**: `designer ballgown size XXS under $5`, five runs. PASS = stopped,
+  `suggest_outfit` never appears in the trace, and the message says what to try.
+- **3**: the criterion is "for 5 queries", so Try N is query N: track jacket,
+  slip dress, platform sneakers, denim jacket, cargo pants, each run 5 times.
+  A query PASSes if in at least one of its runs the trace shows the selected
+  `id` going unchanged into both `suggest_outfit` and `create_fit_card`, and no
+  run ever shows a different `id`. Platform sneakers failed because none of
+  its five runs got past `suggest_outfit`, so its `id` never reached
+  `create_fit_card`. Across all 70 runs there were **0 id mismatches**:
+  65 runs reached `suggest_outfit` and 28 reached `create_fit_card`, always with
+  the selected `id`, and every `id` exists in `data/listings.json`.
+- **4**: `baggy jeans`, the same item (`lst_031`) five times. PASS = a card
+  of 2–4 sentences and ≤ 300 characters. Tries 1–4 produced no card at all.
+- **5**: Try N is query N: `black jacket`, `baggy jeans`, `vintage band tee`,
+  `white sneakers`, `leather bag`. PASS = the top result's `category` is the
+  expected one. Search doesn't call the model, so each query gave the same top
+  result in all five of its runs.
+
+**Why runs stopped early:** 49 of the 65 runs that should have completed
+stopped at a model call. The errors, counted from the results file: **36 ×
+`503 UNAVAILABLE`** ("This model is currently experiencing high demand"),
+**9 × `504 DEADLINE_EXCEEDED`**, **4 × connection failure**. No run crashed.
+
+### Real output, one try per criterion
+
+**Criterion 1, try 1** (`agent.py::run_agent` via `run_eval.py::run_once`):
 
 ```
+- stopped early: yes — Found Y2K Baby Tee — Butterfly Print ($18 on depop), but couldn't write an outfit suggestion: the AI model is overloaded right now (the service returned 503, high demand). Nothing is wrong with your setup — wait a minute and ask again.
+- selected_item: Y2K Baby Tee — Butterfly Print ($18.0, depop)
+- search_results: 10
 
+[1] parse_query
+      in:  vintage graphic tee under $30
+      out: {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+      →    branch: selected id lst_002, going to suggest_outfit
+[3] suggest_outfit
+      in:  id lst_002 + 10 wardrobe items
+      →    ModelUnavailable, stopping: Couldn't reach the model: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+```
+
+Try 2 of the same criterion stopped at the same step with a different error:
+
+```
+- stopped early: yes — Found Y2K Baby Tee — Butterfly Print ($18 on depop), but couldn't write an outfit suggestion. Couldn't reach the model: 504 DEADLINE_EXCEEDED. {'error': {'code': 504, 'message': 'Deadline expired before operation could complete.', 'status': 'DEADLINE_EXCEEDED'}}
+```
+
+**Criterion 2, try 1** (the branch in `agent.py::run_agent`, message from `agent.py::_no_results_message`):
+
+```
+- stopped early: yes — Nothing matched "designer ballgown" in size XXS under $5. Try: use different words for the item — the listings use terms like tee, hoodie, jeans, cargo pants, jacket, boots and bag.
+- selected_item: (none)
+- search_results: 0
+
+[1] parse_query
+      in:  designer ballgown size XXS under $5
+      out: {'description': 'designer ballgown', 'size': 'XXS', 'max_price': 5.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'designer ballgown', 'size': 'XXS', 'max_price': 5.0}
+      out: [] (empty)
+      →    branch: empty, stopping before suggest_outfit
+[3] search_listings (via MCP, hint)
+      in:  {'description': 'designer ballgown', 'size': 'XXS', 'max_price': None}
+      out: [] (empty)
+[4] search_listings (via MCP, hint)
+      in:  {'description': 'designer ballgown', 'size': None, 'max_price': 5.0}
+      out: [] (empty)
+```
+
+**Criterion 3, slip dress try 2.** The `id` `lst_013` is the same at all three steps (`agent.py::run_agent`):
+
+```
+[2] search_listings (via MCP)
+      in:  {'description': 'silk slip dress', 'size': None, 'max_price': 40.0}
+      out: 2 items: 90s Silk Slip Dress — Floral, Midi Length, Silk Button-Down — Sage Green
+      →    branch: selected id lst_013, going to suggest_outfit
+[3] suggest_outfit
+      in:  id lst_013 + 10 wardrobe items
+      out: Outfit one: Layer the 90s silk slip dress over the white ribbed tank top for a nostalgic 90s textured look, th…
+[4] create_fit_card
+      in:  id lst_013 + outfit suggestion
+      out: Found this dreamy 90s silk slip dress on Depop for just $30 and I am obsessed. Totally channeling that grunge-…
+```
+
+The failing query was platform sneakers. All five of its runs stopped this way, before `create_fit_card`:
+
+```
+- stopped early: yes — Found Platform Sneakers — White Chunky Sole ($48 on poshmark), but couldn't write an outfit suggestion: the AI model is overloaded right now (the service returned 503, high demand). Nothing is wrong with your setup — wait a minute and ask again.
+```
+
+**Criterion 4, try 5** (`tools.py::create_fit_card`). This was the only one of the five tries that produced a card: 3 sentences, 199 characters, PASS.
+
+```
+Scored these baggy carpenter jeans on Depop for just $36 and I’m obsessed. They have that perfect 90s workwear slouch. Honestly living in them with chunky sneakers or an oversized crewneck right now.
+```
+
+**Criterion 5**, top result per query (`tools.py::search_listings` via `mcp_server.py`). Each query returned the same top result in all five of its runs:
+
+```
+black jacket      -> lst_022  90s Leather Bomber — Black             outerwear    (expected outerwear)   PASS
+baggy jeans       -> lst_031  Baggy Carpenter Jeans — Dark Wash      bottoms      (expected bottoms)     PASS
+vintage band tee  -> lst_006  Graphic Tee — 2003 Tour Bootleg Style  tops         (expected tops)        PASS
+white sneakers    -> lst_019  Platform Sneakers — White Chunky Sole  shoes        (expected shoes)       PASS
+leather bag       -> lst_039  Mini Shoulder Bag — Tan Leather        accessories  (expected accessories) PASS
 ```
 
 ---
