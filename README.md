@@ -200,6 +200,28 @@ Can't write a fit card for Vintage Levi's 501 Jeans — Medium Wash: no outfit s
 - _What came back:_ The first version didn't run: `python -c "import tools"` failed with `SyntaxError: unterminated f-string literal (detected at line 176)`. The script that wrote the file had turned the `\n` escapes inside the prompt strings into real line breaks, which broke the f-strings.
 - _What I changed:_ I restored the stub with `git checkout tools.py` and rebuilt it with smaller edits, one function at a time. Then I tested each tool on its own from the terminal before wiring the loop. The search results also showed Low-Rise Cargo Pants coming back for "graphic tee", which I kept as a known weakness of keyword matching for unit 4.
 
+**Unit 4.** After doing Milestone 1 myself, I asked Claude (Claude Code) to
+carry out Milestones 2–6 in this repo: trigger the failures, add the trace,
+write the scenarios, run the evals, and draft the write-up. Three specific moments:
+
+**Moment 3 — the MCP move broke the branch, and only the branch**
+
+- _What I asked for:_ to check my Milestone 1 swap before building on it.
+- _What came back:_ running the impossible query gave `NameError: name 'search_listings' is not defined`. My swap had removed the direct import, but `_no_results_message` still called `search_listings` to work out its hints. The happy path worked, so I hadn't noticed. Claude also pointed out that my MCP tool docstring still had the template's `<-- YOUR DESCRIPTION GOES HERE` text in it, which is what a client sees as the tool's description.
+- _What I changed:_ every search now goes through one `_search()` helper that calls `call_tool`, and I rewrote the description. Claude compared the MCP result against the direct call on three queries (`==` on all three) before calling the move done.
+
+**Moment 4 — the first eval hung for 20 minutes**
+
+- _What I asked for:_ to run the before eval.
+- _What came back:_ no output for 20 minutes. Claude checked the process: no CPU use, no MCP child, one open connection to Google. It was stuck in a Gemini call with no timeout. It had already got through 5 of 14 scenarios.
+- _What I changed:_ added `REQUEST_TIMEOUT_MS` (60s) to `config.py` and passed it to the Gemini client, so a stuck call becomes `ModelUnavailable` and gets a message. This counts as part of the Milestone 2 "don't hang" handler, not the Milestone 5 improvement, so it went in before the before run was restarted.
+
+**Moment 5 — keeping a bad-looking before run**
+
+- _What came back:_ Gemini was overloaded during the before run, and criterion 1 came back 0/5. Claude asked whether to keep the run, re-run it later, or fix retries first.
+- _What I decided:_ keep it. The outage exposed a real weakness (no retry on 503/504), and fixing it before measuring would have left Milestone 5 with nothing to measure. The retry became the one improvement.
+- _How the verdicts were reached:_ Claude scored every try with a script against the wording in `criteria.md`, then checked the script by hand (sentence counts, `id`s at each step). It read the targets plainly: criterion 4's one good card is 1/5, not "the prompt works", and criterion 3's unproven query is a miss even though the session never failed. Criterion 3 is revised underneath the original only because, as written, it measured model uptime instead of the session.
+
 <!-- ═══════════════════════ UNIT 4 — THE TEST ═══════════════════════
 
      Don't fill these in during unit 3.
@@ -599,6 +621,37 @@ agent and a passing run was a model call giving up on its first try.
 <!-- For each criterion still missed: what you'd do, and why you stopped where
      you did. "I ran out of time" is fine if it's true. Pretending nothing is
      left is not. -->
+
+**Known problems the improvement doesn't touch**
+
+- **Connection failures still aren't retried.** In the after run, criterion 1
+  try 4 got two 503s, retried, and then hit a connection failure on the third
+  attempt. Connection errors still fail immediately. *What I'd do:* add them
+  to the retry check. *Why I stopped:* that would have been a second change in
+  the same run, and I couldn't have said which one moved the numbers.
+- **An outage longer than ~30 seconds still ends the run.** In the after run,
+  criterion 1 try 1 got a 503 on all five attempts (1+2+4+8+16s of waiting)
+  and gave up. *What I'd do:* fall back to a second model name when the first
+  is overloaded, or honour a longer wait for `suggest_outfit` only. *Why I
+  stopped:* raising `MAX_RETRIES` just makes every failed run slower, and the
+  free tier only allows 15 calls a minute.
+- **Search ties go to data order.** `vintage band tee` returns "Graphic Tee —
+  2003 Tour Bootleg Style" over "Vintage Band Tee — Faded Grey". Both score 3,
+  and the graphic tee comes first in the file. Criterion 5 can't see this
+  because both are `tops`. *What I'd do:* break ties by how many keywords hit
+  the *title*, and tighten criterion 5 to check the title. *Why I stopped:* it
+  isn't one of my current misses, and the diagnosis pointed elsewhere.
+- **One listing has the wrong category in the data.** `lst_013` "90s Silk Slip
+  Dress" is stored as `bottoms`. Any category check on dresses would fail
+  because of the data. I haven't edited the data, since it ships with the
+  starter.
+- **The no-results hints can't suggest relaxing two filters at once.** For
+  `denim jacket size XS under $20` it tries dropping the size, then the price,
+  finds nothing either way, and falls back to "use different words", even
+  though denim jackets exist. *What I'd do:* also try dropping both filters.
+- **MCP is slow.** Each `call_tool` starts `mcp_server.py` as a new process,
+  about 3–5 seconds per search, and the empty path makes three. That's fine for
+  a CLI, but it will matter behind `serve.py` in unit 9.
 
 <!-- ═════════════════════════════════════════════════════════════════════
 
