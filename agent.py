@@ -118,6 +118,8 @@ def run_agent(query: str, wardrobe: dict) -> dict:
 
         if next_step == "parse":
             session["parsed"] = parse_query(session["query"])
+            trace.step("parse_query", inputs=session["query"],
+                       returned=str(session["parsed"]))
             next_step = "search"
 
         elif next_step == "search":
@@ -127,25 +129,64 @@ def run_agent(query: str, wardrobe: dict) -> dict:
             )
             # THE BRANCH: nothing found means stop here, before any model call.
             if not session["search_results"]:
+                trace.step("search_listings (via MCP)", inputs=str(parsed), returned=[],
+                           note="branch: empty, stopping before suggest_outfit")
                 session["error"] = _no_results_message(parsed)
                 next_step = "done"
             else:
                 session["selected_item"] = session["search_results"][0]
+                trace.step("search_listings (via MCP)", inputs=str(parsed),
+                           returned=session["search_results"],
+                           note=f"branch: selected id {session['selected_item']['id']}, "
+                                "going to suggest_outfit")
                 next_step = "outfit"
 
         elif next_step == "outfit":
-            session["outfit_suggestion"] = suggest_outfit(
-                session["selected_item"], session["wardrobe"]
-            )
+            item = session["selected_item"]
+            owned = len((session["wardrobe"] or {}).get("items") or [])
+            try:
+                session["outfit_suggestion"] = suggest_outfit(item, session["wardrobe"])
+            except ModelUnavailable as exc:
+                session["error"] = _model_down_message(item, "an outfit suggestion", exc)
+                trace.step("suggest_outfit", inputs=f"id {item['id']} + {owned} wardrobe items",
+                           note=f"ModelUnavailable, stopping: {exc}")
+                next_step = "done"
+                continue
+            trace.step("suggest_outfit", inputs=f"id {item['id']} + {owned} wardrobe items",
+                       returned=session["outfit_suggestion"])
             next_step = "fit_card"
 
         elif next_step == "fit_card":
-            session["fit_card"] = create_fit_card(
-                session["outfit_suggestion"], session["selected_item"]
-            )
+            item = session["selected_item"]
+            try:
+                session["fit_card"] = create_fit_card(session["outfit_suggestion"], item)
+            except ModelUnavailable as exc:
+                session["error"] = _model_down_message(item, "a fit card", exc)
+                trace.step("create_fit_card", inputs=f"id {item['id']} + outfit suggestion",
+                           note=f"ModelUnavailable, stopping: {exc}")
+                next_step = "done"
+                continue
+            trace.step("create_fit_card", inputs=f"id {item['id']} + outfit suggestion",
+                       returned=session["fit_card"])
             next_step = "done"
 
     return session
+
+
+def _model_down_message(item: dict, what: str, exc: ModelUnavailable) -> str:
+    """
+    Name what broke and what the user can do, and keep the find — the search
+    worked even though the model didn't.
+    """
+    found = f"Found {item['title']} (${item['price']:.0f} on {item['platform']}), "
+    reason = str(exc)
+    if "503" in reason or "high demand" in reason.lower():
+        return (
+            found + f"but couldn't write {what}: the AI model is overloaded right "
+            "now (the service returned 503, high demand). Nothing is wrong with "
+            "your setup — wait a minute and ask again."
+        )
+    return found + f"but couldn't write {what}. {reason}"
 
 
 def _search(description: str, size: str | None, max_price: float | None) -> list[dict]:
@@ -155,6 +196,15 @@ def _search(description: str, size: str | None, max_price: float | None) -> list
         "size": size,
         "max_price": max_price,
     })
+
+
+def _hint_search(description: str, size: str | None, max_price: float | None) -> list[dict]:
+    """A search with one filter dropped, traced so the extra MCP calls show up."""
+    results = _search(description, size, max_price)
+    trace.step("search_listings (via MCP, hint)",
+               inputs=str({"description": description, "size": size, "max_price": max_price}),
+               returned=results)
+    return results
 
 
 # ── query parsing (regex, no model call) ──────────────────────────────────────
@@ -213,12 +263,12 @@ def _no_results_message(parsed: dict) -> str:
 
     tips = []
     if max_price is not None:
-        without_price = _search(description, size, None)
+        without_price = _hint_search(description, size, None)
         if without_price:
             cheapest = min(item["price"] for item in without_price)
             tips.append(f"raise your price limit to ${cheapest:.0f} or more")
     if size:
-        if _search(description, None, max_price):
+        if _hint_search(description, None, max_price):
             tips.append(f"drop the size {size} filter")
     if not tips:
         tips.append(

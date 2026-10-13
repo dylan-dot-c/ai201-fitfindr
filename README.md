@@ -277,22 +277,97 @@ that produced it:
      the same length, your branch isn't working — and this is the fastest way
      anyone will ever find that out. -->
 
-**Happy path**
+**Happy path** — `python app.py ask 'vintage graphic tee under $30' --trace` (trace calls in `agent.py::run_agent`)
 
 ```
+[1] parse_query
+      in:  vintage graphic tee under $30
+      out: {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'vintage graphic tee', 'size': None, 'max_price': 30.0}
+      out: 10 items: Y2K Baby Tee — Butterfly Print, Graphic Tee — 2003 Tour Bootleg Style, Vintage Band Tee — Faded Grey … +7 more
+      →    branch: selected id lst_002, going to suggest_outfit
+[3] suggest_outfit
+      in:  id lst_002 + 10 wardrobe items
+      out: Outfit one pairs the Y2K Baby Tee with baggy straight-leg jeans, dark wash for a classic noughties streetwear …
+[4] create_fit_card
+      in:  id lst_002 + outfit suggestion
+      out: Obsessed with this Y2K baby tee I just scored for only $18! The butterfly print is so nostalgic and cute. Grab…
 
+  Found:    Y2K Baby Tee — Butterfly Print — $18.0 on depop
+  Fit card: Obsessed with this Y2K baby tee I just scored for only $18! The butterfly print is so nostalgic and cute. Grabbed it on depop and I've already styled it two ways, from baggy denim streetwear to an edgy layered look with my khaki trousers.
+
+2 model calls this session, 590 prompt + 158 output tokens
 ```
 
-**Empty search**
+**Empty search** — `python app.py ask 'designer ballgown size XXS under $5' --trace`
 
 ```
+[1] parse_query
+      in:  designer ballgown size XXS under $5
+      out: {'description': 'designer ballgown', 'size': 'XXS', 'max_price': 5.0}
+[2] search_listings (via MCP)
+      in:  {'description': 'designer ballgown', 'size': 'XXS', 'max_price': 5.0}
+      out: [] (empty)
+      →    branch: empty, stopping before suggest_outfit
+[3] search_listings (via MCP, hint)
+      in:  {'description': 'designer ballgown', 'size': 'XXS', 'max_price': None}
+      out: [] (empty)
+[4] search_listings (via MCP, hint)
+      in:  {'description': 'designer ballgown', 'size': None, 'max_price': 5.0}
+      out: [] (empty)
 
+  Nothing matched "designer ballgown" in size XXS under $5. Try: use different words for the item — the listings use terms like tee, hoodie, jeans, cargo pants, jacket, boots and bag.
+
+0 model calls this session
 ```
 
-**On the MCP move:** <!-- what changed in your code, and whether anything
-behaved differently afterwards. If the rewire didn't work, say exactly where it
-broke — the error text and the last thing that worked. That earns the point in
-full. -->
+The empty path never reaches `suggest_outfit`. Steps 3 and 4 are the
+no-results message re-running the search with one filter dropped each, to
+work out which advice would actually find something. Both also go through MCP.
+
+**On the MCP move:** `search_listings` is registered in `mcp_server.py`, and
+`agent.py` no longer imports it directly. Every search goes through
+`agent.py::_search`, which calls `mcp_client.call_tool("search_listings", {...})`.
+The return value didn't change: for three probe queries (a match, a size-filtered
+match and an empty one) the MCP result was `==` to the direct call, still a
+`list[dict]` with `price` as a float, and `[]` for no match. What *did* break was
+the empty-search path. `_no_results_message` still called `search_listings`
+directly to work out its hints, and once the import was gone every impossible
+query raised `NameError: name 'search_listings' is not defined`. The happy
+path worked, so this only showed up on the branch. Fixed by routing those calls
+through MCP too. The one behaviour difference is speed: each `call_tool` starts
+the server as a new Python process. One call timed at 5.6s, and the empty path
+(three searches) took 11.5s end to end, against effectively instant before.
+
+### Failure modes, triggered on purpose
+
+| Failure | How I triggered it | What the agent said before any handler | Handled? |
+|---|---|---|---|
+| Empty search | `python app.py ask 'designer ballgown size XXS under $5'` | `Nothing matched "designer ballgown" in size XXS under $5. Try: use different words for the item — the listings use terms like tee, hoodie, jeans, cargo pants, jacket, boots and bag.` (After the MCP move, and before the fix above, it said `NameError: name 'search_listings' is not defined`.) | Yes, already: the branch in `run_agent` |
+| Empty wardrobe | `python app.py ask 'denim jacket under $50' --empty-wardrobe` | `No saved wardrobe yet — general styling ideas: For a casual daytime look, pair the cropped denim jacket with a fitted black ribbed tank top and high-waisted wide-leg trousers…` and a normal fit card | Yes, already: `tools.py::suggest_outfit` asks for general advice |
+| Model unavailable (bad key) | Changed one character of `GEMINI_API_KEY`, asked `black leather boots for winter under $70` (never asked before, so not cached) | `ModelUnavailable: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.` That text only reached the user because `app.py`'s catch-all printed the exception. `run_agent` itself crashed, so the item it had found was thrown away, and `run_eval.py` / `serve.py` would have recorded a crash. | **Added a handler** |
+| Model unavailable (real outage, not triggered by me) | Happened by itself during testing: Gemini returned 503 "high demand" | `ModelUnavailable: Couldn't reach the model: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. ...` — a raw provider dict, and it suggested nothing to try | **Added a handler** |
+
+**The handler** — `agent.py::run_agent` catches `ModelUnavailable` around both
+model-calling steps, records it in the trace, and puts a message in
+`session["error"]` built by `agent.py::_model_down_message`. It keeps the item
+the search found, names which step broke, and says what to do. After the
+handler, with the bad key (`brown suede jacket under $90`):
+
+```
+[3] suggest_outfit
+      in:  id lst_004 + 10 wardrobe items
+      →    ModelUnavailable, stopping: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.
+
+  Found 90s Track Jacket — Navy/White Stripe ($45 on poshmark), but couldn't write an outfit suggestion. The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.
+```
+
+And during a real 503:
+
+```
+  Found Y2K Baby Tee — Butterfly Print ($18 on depop), but couldn't write an outfit suggestion: the AI model is overloaded right now (the service returned 503, high demand). Nothing is wrong with your setup — wait a minute and ask again.
+```
 
 ---
 
