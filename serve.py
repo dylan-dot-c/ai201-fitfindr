@@ -45,7 +45,7 @@ from datetime import datetime, timezone
 # and fixes the Windows console encoding for every module that imports it.
 import config  # noqa: F401
 
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 
 import generate
 from agent import run_agent
@@ -54,6 +54,14 @@ from utils.data_loader import get_example_wardrobe
 app = Flask(__name__)
 
 LOG_FILE = config.ROOT / "logs" / "requests.jsonl"
+
+
+@app.after_request
+def _tag_response(response):
+    """Echo the log record's id back, so a caller can find its own record."""
+    if "request_id" in g:
+        response.headers["X-Request-Id"] = g.request_id
+    return response
 
 
 def _log(record: dict) -> None:
@@ -142,6 +150,7 @@ def ask():
         "model": config.MODEL,
         "cache_enabled": config.CACHE_ENABLED,
     }
+    g.request_id = record["request_id"]
 
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
