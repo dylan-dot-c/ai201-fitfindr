@@ -27,15 +27,19 @@ web server has to be. The reason is worth reading before you deploy: see the
 note above `_one_at_a_time` below — it also decides which gunicorn worker you
 can use.
 
-⚠️ There is deliberately NO logging, NO timing and NO request counting in this
-file. That is unit 9's follow-along: you instrument this yourself, first, and
-then deploy it. A structured log you were handed teaches you nothing about
-what belongs in one — and the timing field is the one everybody skips.
+Instrumentation (capstone): every /ask request — answered, rejected or
+crashed — writes one JSON record to stdout (where Render's log viewer keeps
+it) and to logs/requests.jsonl. `GET /logs?n=20` reads the file back, because
+a free Render instance wipes its disk when it sleeps.
 """
 
+import json
 import os
 import sys
 import threading
+import time
+import uuid
+from datetime import datetime, timezone
 
 # config first, and before anything that talks to the model: it loads your .env
 # and fixes the Windows console encoding for every module that imports it.
@@ -43,10 +47,34 @@ import config  # noqa: F401
 
 from flask import Flask, jsonify, request
 
+import generate
 from agent import run_agent
 from utils.data_loader import get_example_wardrobe
 
 app = Flask(__name__)
+
+LOG_FILE = config.ROOT / "logs" / "requests.jsonl"
+
+
+def _log(record: dict) -> None:
+    """Write one structured record: a line of JSON to stdout and to LOG_FILE."""
+    line = json.dumps(record, ensure_ascii=False, default=str)
+    print(line, flush=True)
+    try:
+        LOG_FILE.parent.mkdir(exist_ok=True)
+        with LOG_FILE.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError as exc:  # a full or read-only disk must not fail the request
+        print(f"  [serve] could not write {LOG_FILE}: {exc}", file=sys.stderr, flush=True)
+
+
+def _outcome(session: dict) -> str:
+    """Which way the run ended, as one word you can count."""
+    if session.get("fit_card"):
+        return "ok"
+    if not session.get("search_results"):
+        return "no_results"
+    return "model_error"
 
 
 # ── one request at a time ─────────────────────────────────────────────────────
@@ -107,10 +135,29 @@ def ask():
                                                 example wardrobe the CLI uses.
     Out:  the session dict from run_agent(), as JSON.
     """
-    payload = request.get_json(silent=True) or {}
-    query = (payload.get("query") or "").strip()
+    started = time.perf_counter()
+    record = {
+        "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+        "request_id": uuid.uuid4().hex[:8],
+        "model": config.MODEL,
+        "cache_enabled": config.CACHE_ENABLED,
+    }
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        payload = {}
+    query = payload.get("query")
+    query = query.strip() if isinstance(query, str) else ""
     if not query:
         # 400 rather than a stack trace: the caller can act on this one.
+        record.update({
+            "query": None,
+            "status": 400,
+            "outcome": "rejected",
+            "error": "missing 'query'",
+            "duration_ms": round((time.perf_counter() - started) * 1000),
+        })
+        _log(record)
         return jsonify({"error": "Send JSON with a 'query' field, e.g. "
                                  '{"query": "vintage graphic tee under $30"}'}), 400
 
@@ -136,20 +183,70 @@ def ask():
             flush=True,
         )
 
+    record["query"] = query
+    record["wardrobe_items"] = len(wardrobe.get("items") or [])
+
     failure = None
     session = None
     with _one_at_a_time:
+        # Inside the lock nobody else is calling the model, so the difference
+        # in generate.py's session counters is exactly this request's spend.
+        lock_acquired = time.perf_counter()
+        calls_before = generate.call_count()
+        tokens_before = generate.token_counts()
         try:
             session = run_agent(query, wardrobe)
         except Exception as exc:  # noqa: BLE001 — a 500 with a sentence beats a hang
             failure = f"{type(exc).__name__}: {exc}"
+        finished = time.perf_counter()
+        tokens_after = generate.token_counts()
+        record["model_calls"] = generate.call_count() - calls_before
+        record["prompt_tokens"] = tokens_after["prompt"] - tokens_before["prompt"]
+        record["output_tokens"] = tokens_after["output"] - tokens_before["output"]
 
     # Outside the lock: building a response is not work the next caller should
     # be waiting on.
+    record["queue_wait_ms"] = round((lock_acquired - started) * 1000)
+    record["agent_ms"] = round((finished - lock_acquired) * 1000)
+
     if failure is not None:
+        record.update({"status": 500, "outcome": "crash", "error": failure})
+        record["duration_ms"] = round((time.perf_counter() - started) * 1000)
+        _log(record)
         return jsonify({"error": failure}), 500
 
+    item = session.get("selected_item") or {}
+    record.update({
+        "status": 200,
+        "outcome": _outcome(session),
+        "error": session.get("error"),
+        "parsed": session.get("parsed"),
+        "results": len(session.get("search_results") or []),
+        "selected_id": item.get("id"),
+        "selected_price": item.get("price"),
+        "fit_card_chars": len(session.get("fit_card") or ""),
+    })
+    record["duration_ms"] = round((time.perf_counter() - started) * 1000)
+    _log(record)
     return jsonify(session)
+
+
+@app.get("/logs")
+def logs():
+    """
+    The last n log records (default 20, max 200), oldest first.
+
+    Here because a free Render instance loses its disk when it sleeps: copy
+    these into the README the same session you produce them.
+    """
+    try:
+        n = max(1, min(200, int(request.args.get("n", 20))))
+    except ValueError:
+        n = 20
+    if not LOG_FILE.exists():
+        return jsonify([])
+    lines = LOG_FILE.read_text(encoding="utf-8").splitlines()[-n:]
+    return jsonify([json.loads(line) for line in lines if line.strip()])
 
 
 if __name__ == "__main__":

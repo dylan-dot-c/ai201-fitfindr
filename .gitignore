@@ -21,3 +21,6 @@ Thumbs.db
 
 # NOTE: results/ is deliberately NOT ignored. Your run logs are evidence that
 # the test actually happened, and they're part of what gets graded. Commit them.
+
+# Local request log from serve.py — paste extracts into the README instead
+logs/
