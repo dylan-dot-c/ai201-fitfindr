@@ -149,9 +149,61 @@ gunicorn serve:app
 | `gunicorn serve:app`, exactly | Not `-k gevent`, not `-k eventlet`, not wrapped for uvicorn. `mcp_client.call_tool` uses `asyncio.run()`, which won't start inside a running event loop, so an async worker breaks **every** MCP call — and only once you've deployed it |
 | The first request is slow | The free tier puts your app to sleep after about fifteen minutes of nothing. The next request wakes it up and waits for it — around a minute. Not a bug, and worth knowing before you demo it |
 
-`serve.py` ships with **no logging and no timing in it**, on purpose. You add
-that yourself in the follow-along, before you deploy — instrumenting first is
-the point of the session.
+### Deployed on Render (capstone)
+
+The service is defined in [render.yaml](render.yaml), so there's nothing to
+type into Render's settings except the key.
+
+1. Push this repo to GitHub.
+2. On [render.com](https://render.com): **New → Blueprint**, connect GitHub,
+   pick this repo. Render reads `render.yaml` and creates a free web service
+   called `fitfindr`.
+3. When it asks for `GEMINI_API_KEY`, paste your key. It's stored by Render,
+   not in the repo.
+4. Wait for the build to finish and the health check on `/health` to pass. The
+   URL is at the top of the service page, `https://fitfindr-XXXX.onrender.com`.
+
+What `render.yaml` sets, and why:
+
+| Setting | Why |
+|---|---|
+| `gunicorn serve:app --workers 1 --timeout 180` | One sync worker, so `serve.py`'s lock covers every request and MCP's `asyncio.run()` works. 180s because one run is several model calls and the limiter can wait up to 65s; gunicorn's default 30s kills those runs |
+| `PYTHON_VERSION=3.13.5` | `requirements.txt` supports 3.11–3.13; Render's default can be newer |
+| `AI201_CACHE=0` | Every request makes real model calls, so the token counts in the log are what a run actually costs |
+
+Try it (the first request after ~15 minutes idle takes about a minute while it wakes):
+
+```bash
+curl https://fitfindr-XXXX.onrender.com/health
+curl -X POST https://fitfindr-XXXX.onrender.com/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "vintage graphic tee under $30"}'
+curl 'https://fitfindr-XXXX.onrender.com/logs?n=20'
+```
+
+### The request log
+
+Every `/ask` request writes one JSON record: answered, rejected (400) and
+crashed (500) alike. Each record goes to stdout, where Render's **Logs** tab
+keeps it, and to `logs/requests.jsonl`, which `GET /logs?n=20` (max 200)
+reads back.
+
+The free instance **wipes its disk when it sleeps**, so `/logs` only holds what
+happened since it last woke. Copy what you need into the README the same
+session.
+
+| Field | What it is |
+|---|---|
+| `ts` | UTC timestamp when the request arrived |
+| `request_id` | 8 random hex characters, to find one request among many |
+| `model`, `cache_enabled` | Which model answered, and whether cached answers were allowed |
+| `query`, `wardrobe_items` | What came in |
+| `status` | HTTP status returned: 200, 400 or 500 |
+| `outcome` | `ok` (fit card written), `no_results`, `model_error` (found an item, model failed), `rejected` (bad request), `crash` (exception) |
+| `error` | `session["error"]`, or the exception, or `null` |
+| `parsed`, `results`, `selected_id`, `selected_price`, `fit_card_chars` | What came out |
+| `model_calls`, `prompt_tokens`, `output_tokens` | This request's spend, as reported by Gemini |
+| `queue_wait_ms`, `agent_ms`, `duration_ms` | Time waiting for the lock, time in `run_agent()`, total |
 
 ---
 
