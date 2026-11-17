@@ -168,7 +168,7 @@ What `render.yaml` sets, and why:
 
 | Setting | Why |
 |---|---|
-| `gunicorn serve:app --workers 1 --timeout 180` | One sync worker, so `serve.py`'s lock covers every request and MCP's `asyncio.run()` works. 180s because one run is several model calls and the limiter can wait up to 65s; gunicorn's default 30s kills those runs |
+| `gunicorn serve:app --workers 1 --threads 4 --timeout 180` | One process, so `serve.py`'s lock covers every request. Threads (not an async worker), so MCP's `asyncio.run()` still works **and `/health` answers during an agent run** — without them Render's health check timed out mid-run and restarted the instance. 180s because one run is several model calls and the limiter can wait up to 65s; gunicorn's default 30s kills those runs |
 | `PYTHON_VERSION=3.13.5` | `requirements.txt` supports 3.11–3.13; Render's default can be newer |
 | `AI201_CACHE=0` | Every request makes real model calls, so the token counts in the log are what a run actually costs |
 

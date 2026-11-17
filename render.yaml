@@ -6,11 +6,14 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    # Sync worker, exactly one: serve.py's lock is per process, and an async
-    # worker breaks every MCP call (see serve.py). --timeout 180 because one
-    # agent run is several model calls and the rate limiter can wait up to 65s;
-    # gunicorn's default of 30s kills those mid-run.
-    startCommand: gunicorn serve:app --bind 0.0.0.0:$PORT --workers 1 --timeout 180
+    # One process: serve.py's lock is per process. Threads, not an async worker:
+    # an async worker breaks every MCP call (see serve.py), threads don't.
+    # --threads 4 so /health still answers while an agent run is in progress —
+    # with one bare sync worker Render's health check got no answer during a
+    # 20-50s run, decided the app was dead, and restarted it (wiping the log).
+    # --timeout 180 because one agent run is several model calls and the rate
+    # limiter can wait up to 65s; gunicorn's default of 30s kills those mid-run.
+    startCommand: gunicorn serve:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 180
     healthCheckPath: /health
     envVars:
       # requirements.txt supports 3.11-3.13; Render's default may be newer.

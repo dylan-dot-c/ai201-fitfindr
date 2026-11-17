@@ -158,6 +158,9 @@ def _outcome(session: dict) -> str:
 #
 #     gunicorn serve:app              ← right: the DEFAULT sync worker
 #     gunicorn -k gevent serve:app    ← breaks every MCP call you make
+#
+# On Render this repo runs `--threads 4` (see render.yaml): still no event
+# loop, so MCP works, but /health gets a thread while an agent run is busy.
 
 _one_at_a_time = threading.Lock()
 
@@ -186,6 +189,11 @@ def ask():
         "cache_enabled": config.CACHE_ENABLED,
     }
     g.request_id = record["request_id"]
+    # stdout only: if the instance dies mid-run, this line in Render's log is
+    # the only sign the request ever arrived.
+    print(json.dumps({"event": "start", "ts": record["ts"],
+                      "request_id": record["request_id"], "boot_id": BOOT_ID}),
+          flush=True)
 
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
