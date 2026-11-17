@@ -57,6 +57,8 @@ REQUESTS = [
     {"kind": "bad_input", "body": "{}"},
     {"kind": "bad_input", "body": '{"query": "   "}'},
     {"kind": "bad_input", "body": "this is not json"},
+    {"kind": "bad_input", "body": '{"query": null}'},
+    {"kind": "bad_input", "body": '{"query": 123}'},
 ]
 
 
@@ -195,8 +197,8 @@ def write(args, base: str, health_ms: int, rows: list[dict]) -> None:
         f"- Server boot ids seen (more than one = it restarted): "
         f"{sorted({r['server'].get('boot_id') for r in logged}) or '-'}",
         "",
-        "| # | kind | request body | HTTP | client ms | server outcome | server ms | queue ms | calls | tokens in/out | rss MB | child peak MB |",
-        "|---|---|---|---|---|---|---|---|---|---|---|---|",
+        "| # | kind | request body | HTTP | client ms | server outcome | server ms | queue ms | fit card | calls | tokens in/out | rss MB | child peak MB |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for i, r in enumerate(rows, 1):
         s = r["server"] or {}
@@ -206,7 +208,8 @@ def write(args, base: str, health_ms: int, rows: list[dict]) -> None:
         lines.append(
             f"| {i} | {r['kind']} | `{body}` | {r['status']} | {r['client_ms']} | "
             f"{s.get('outcome', 'NOT LOGGED')} | {s.get('duration_ms', '-')} | "
-            f"{s.get('queue_wait_ms', '-')} | {s.get('model_calls', '-')} | {tokens} | "
+            f"{s.get('queue_wait_ms', '-')} | {'yes' if r.get('fit_card') else 'no'} | "
+            f"{s.get('model_calls', '-')} | {tokens} | "
             f"{s.get('rss_mb', '-')} | {s.get('child_peak_rss_mb', '-')} |"
         )
     lines += [
