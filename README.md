@@ -915,8 +915,48 @@ limiter waited.
 
 Criterion 3 is difficult, but it's a valid trade-off for what it trades.
 
-I'd tighten criterion 5 by checking the output; once that's good, it will be better.
+*Criterion 3 (missed after the improvement).* What I'd do: log how long
+`generate.py::_wait_for_slot` waits on every call, as a `rate_limit_wait_ms`
+field in the request record. Right now the diagnosis above is inferred from
+call timestamps; with that field, every slow run would say for itself whether
+it was the limiter, Gemini pushing back, or something else. Only then would I
+pick a fix: a higher Gemini quota, or pacing requests so runs never bunch up
+against the 15-a-minute limit. Why I stopped: the improvement and its re-run
+used up the unit, and I'd rather report the trade honestly than rush a second
+change I hadn't measured.
+
+*Criterion 5 (met, but set too low).* I'd tighten criterion 5 by checking the
+output; once that's good, it will be better. The highest of all 60 runs was
+827 tokens against a limit of 1,000, so the target could never fail. I'd
+tighten it to **at most 900 tokens in 9 of 10 runs**: about 10% above the
+highest run measured, so a prompt that grows or a fit card that runs long
+would actually show up as a miss.
+
+*The one thing I'd do first with another unit:* add the rate-limit wait to the
+log. It's the only miss left, it's the one part of the diagnosis that's
+guessed rather than measured, and any fix for it can't be judged without that
+number.
 
 **How I Used AI**
 
-I used AI to help me write the YAML file so I could deploy the app, and used AI to automate some commands and verify the live server and tools.
+I used AI to help me write the YAML file so I could deploy the app, and used AI to automate some commands and verify the live server and tools. I used Claude (Claude Code) throughout this unit.
+
+*Moment 1: deploying.* I asked Claude to deploy FitFindr to Render. I got
+`render.yaml`, structured logging in `serve.py`, and `run_live.py` to test the
+live server. The first deploy kept restarting after 2–4 requests; Claude
+probed `/health` during a request and found Render's health check was killing
+the instance, and fixed it with `--threads 4`. What I changed: I ran the
+trials myself and kept the failed runs in `results/` as evidence instead of
+deleting them.
+
+*Moment 2: the criteria.* The brief says to write criteria yourself, so I
+wrote all five targets and reasons, then asked Claude to tighten them. It
+kept my numbers and reasons and added the testing details (which 5 bad
+inputs, client-side timing, how a restart is detected). What I changed: I
+reviewed the details before committing; the 16-request count in criterion 1
+came from adding two bad inputs I hadn't tested yet.
+
+Claude also drafted the factual parts of this Capstone write-up from the
+results files (the run logs, cost arithmetic and diagnosis), and expanded my
+notes in What's Still Broken; the 900-token target there is Claude's
+suggestion, which I accepted.
