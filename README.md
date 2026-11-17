@@ -245,13 +245,13 @@ Produced by `python run_eval.py --label before` (`run_eval.py::main`, which call
 [`results/run_2026-10-13_1003_before.md`](results/run_2026-10-13_1003_before.md).
 14 scenarios × 5 tries = 70 runs, 93 model calls.
 
-| Criterion | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict |
-| --------- | ------ | ----- | ----- | ----- | ----- | ----- | ------- |
-| 1. A matching query completes all three tools | 4 of 5 | FAIL | FAIL | FAIL | FAIL | FAIL | MISSED (0/5) |
-| 2. An impossible query stops before the second tool | 5 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
-| 3. The item search found is the item the next tools receive | 5 of 5 | PASS | PASS | FAIL | PASS | PASS | MISSED (4/5) |
-| 4. The fit card is a postable length | 4 of 5 | FAIL | FAIL | FAIL | FAIL | PASS | MISSED (1/5) |
-| 5. Search returns the right category for the item type | 4 of 5 | PASS | PASS | PASS | PASS | PASS | MET (5/5) |
+| Criterion                                                   | Target | Try 1 | Try 2 | Try 3 | Try 4 | Try 5 | Verdict      |
+| ----------------------------------------------------------- | ------ | ----- | ----- | ----- | ----- | ----- | ------------ |
+| 1. A matching query completes all three tools               | 4 of 5 | FAIL  | FAIL  | FAIL  | FAIL  | FAIL  | MISSED (0/5) |
+| 2. An impossible query stops before the second tool         | 5 of 5 | PASS  | PASS  | PASS  | PASS  | PASS  | MET (5/5)    |
+| 3. The item search found is the item the next tools receive | 5 of 5 | PASS  | PASS  | FAIL  | PASS  | PASS  | MISSED (4/5) |
+| 4. The fit card is a postable length                        | 4 of 5 | FAIL  | FAIL  | FAIL  | FAIL  | PASS  | MISSED (1/5) |
+| 5. Search returns the right category for the item type      | 4 of 5 | PASS  | PASS  | PASS  | PASS  | PASS  | MET (5/5)    |
 
 **How each row was scored**
 
@@ -386,13 +386,13 @@ leather bag       -> lst_039  Mini Shoulder Bag — Tan Leather        accessori
      Look for a pattern. Three misses on the same tool is one problem, not
      three. -->
 
-| #   | Criterion | Target | Verdict | How I decided |
-| --- | --------- | ------ | ------- | ------------- |
-| 1   | A matching query completes all three tools | 4 of 5 | **MISSED (0/5)** | No run of `vintage graphic tee under $30` returned a fit card. Every one stopped at `suggest_outfit` on a 503 or 504. 0 is below 4. |
-| 2   | An impossible query stops before the second tool | 5 of 5 | **MET (5/5)** | All five stopped after `search_listings` returned `[]`. `suggest_outfit` is absent from every trace, 0 model calls were made, and the message names what to change. |
+| #   | Criterion                                                | Target | Verdict          | How I decided                                                                                                                                                                                                                                       |
+| --- | -------------------------------------------------------- | ------ | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | A matching query completes all three tools               | 4 of 5 | **MISSED (0/5)** | No run of `vintage graphic tee under $30` returned a fit card. Every one stopped at `suggest_outfit` on a 503 or 504. 0 is below 4.                                                                                                                 |
+| 2   | An impossible query stops before the second tool         | 5 of 5 | **MET (5/5)**    | All five stopped after `search_listings` returned `[]`. `suggest_outfit` is absent from every trace, 0 model calls were made, and the message names what to change.                                                                                 |
 | 3   | The item search found is the item the next tools receive | 5 of 5 | **MISSED (4/5)** | Four queries showed the same `id` going into both later tools. Platform sneakers never reached `create_fit_card` in five runs, so for that query the criterion's condition was never shown to hold. 5 of 5 means a single unproven query is a miss. |
-| 4   | The fit card is a postable length | 4 of 5 | **MISSED (1/5)** | The criterion asks for a postable card on five runs of the same item. Four of the five runs produced no card, and no card is not a postable card. The one card that was produced passed (3 sentences, 199 characters). |
-| 5   | Search returns the right category for the item type | 4 of 5 | **MET (5/5)** | The top result's `category` matched the expected one for all five item types, identically in all five runs of each. |
+| 4   | The fit card is a postable length                        | 4 of 5 | **MISSED (1/5)** | The criterion asks for a postable card on five runs of the same item. Four of the five runs produced no card, and no card is not a postable card. The one card that was produced passed (3 sentences, 199 characters).                              |
+| 5   | Search returns the right category for the item type      | 4 of 5 | **MET (5/5)**    | The top result's `category` matched the expected one for all five item types, identically in all five runs of each.                                                                                                                                 |
 
 **Diagnoses**
 
@@ -400,22 +400,22 @@ leather bag       -> lst_039  Mini Shoulder Bag — Tan Leather        accessori
 missed for the same reason, at the same place: **the model call, inside
 `generate.py::generate`**.
 
-- *What happened:* 93 model calls were made and 49 failed (53%). The errors
+- _What happened:_ 93 model calls were made and 49 failed (53%). The errors
   were 36 × `503 UNAVAILABLE` ("high demand"), 9 × `504 DEADLINE_EXCEEDED` and
   4 × connection failure. By step, 37 failed in `suggest_outfit` and 12 in
   `create_fit_card`.
-- *The mechanism:* `generate()` has a retry loop (`MAX_RETRIES = 5`), but it
+- _The mechanism:_ `generate()` has a retry loop (`MAX_RETRIES = 5`), but it
   only retries when the error text looks like a rate limit (`429`, "resource
   exhausted", "rate limit"). A 503 or 504 doesn't match, so it raises
   `ModelUnavailable` on the **first** attempt. The eval log contains **zero**
   `[rate limit]` retry lines. A temporary overload that would likely have
   cleared in a few seconds is treated the same as a revoked API key.
-- *What did NOT fail:* the tools' logic, the branch and the session. The
+- _What did NOT fail:_ the tools' logic, the branch and the session. The
   `ModelUnavailable` handler in `run_agent` did its job in all 49 cases: no
   crashes, the found item kept, and a message saying what to do. Every
   `id` matched across steps (0 mismatches in 65 + 28 handoffs), and all 16
   fit cards that were produced met criterion 4's length rule. The failures
-  are in *availability*, not in what the agent does when the model answers.
+  are in _availability_, not in what the agent does when the model answers.
 
 **Criterion 1.** Place: the model call, through `suggest_outfit`. Mechanism: as
 above. Each run makes two model calls, and both must succeed. With about half of
@@ -443,7 +443,7 @@ The run did expose a weakness this criterion can't see. For `vintage band tee`
 the top result was "Graphic Tee — 2003 Tour Bootleg Style", not "Vintage Band
 Tee — Faded Grey". They tie on keyword score and ties keep data order. The
 category was right, but the more exact item lost. I'd tighten this to "the top
-result's *title* contains the item word, 5 of 5", which would catch ranking
+result's _title_ contains the item word, 5 of 5", which would catch ranking
 mistakes, not just category ones. Also, `lst_013` "90s Silk Slip Dress" is
 stored with `category: "bottoms"` in the data, so a dress query would fail a
 category check because of the data, not the search.
@@ -519,7 +519,7 @@ work out which advice would actually find something. Both also go through MCP.
 `agent.py::_search`, which calls `mcp_client.call_tool("search_listings", {...})`.
 The return value didn't change: for three probe queries (a match, a size-filtered
 match and an empty one) the MCP result was `==` to the direct call, still a
-`list[dict]` with `price` as a float, and `[]` for no match. What *did* break was
+`list[dict]` with `price` as a float, and `[]` for no match. What _did_ break was
 the empty-search path. `_no_results_message` still called `search_listings`
 directly to work out its hints, and once the import was gone every impossible
 query raised `NameError: name 'search_listings' is not defined`. The happy
@@ -530,12 +530,12 @@ the server as a new Python process. One call timed at 5.6s, and the empty path
 
 ### Failure modes, triggered on purpose
 
-| Failure | How I triggered it | What the agent said before any handler | Handled? |
-|---|---|---|---|
-| Empty search | `python app.py ask 'designer ballgown size XXS under $5'` | `Nothing matched "designer ballgown" in size XXS under $5. Try: use different words for the item — the listings use terms like tee, hoodie, jeans, cargo pants, jacket, boots and bag.` (After the MCP move, and before the fix above, it said `NameError: name 'search_listings' is not defined`.) | Yes, already: the branch in `run_agent` |
-| Empty wardrobe | `python app.py ask 'denim jacket under $50' --empty-wardrobe` | `No saved wardrobe yet — general styling ideas: For a casual daytime look, pair the cropped denim jacket with a fitted black ribbed tank top and high-waisted wide-leg trousers…` and a normal fit card | Yes, already: `tools.py::suggest_outfit` asks for general advice |
-| Model unavailable (bad key) | Changed one character of `GEMINI_API_KEY`, asked `black leather boots for winter under $70` (never asked before, so not cached) | `ModelUnavailable: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.` That text only reached the user because `app.py`'s catch-all printed the exception. `run_agent` itself crashed, so the item it had found was thrown away, and `run_eval.py` / `serve.py` would have recorded a crash. | **Added a handler** |
-| Model unavailable (real outage, not triggered by me) | Happened by itself during testing: Gemini returned 503 "high demand" | `ModelUnavailable: Couldn't reach the model: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. ...` — a raw provider dict, and it suggested nothing to try | **Added a handler** |
+| Failure                                              | How I triggered it                                                                                                              | What the agent said before any handler                                                                                                                                                                                                                                                                                                                           | Handled?                                                         |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Empty search                                         | `python app.py ask 'designer ballgown size XXS under $5'`                                                                       | `Nothing matched "designer ballgown" in size XXS under $5. Try: use different words for the item — the listings use terms like tee, hoodie, jeans, cargo pants, jacket, boots and bag.` (After the MCP move, and before the fix above, it said `NameError: name 'search_listings' is not defined`.)                                                              | Yes, already: the branch in `run_agent`                          |
+| Empty wardrobe                                       | `python app.py ask 'denim jacket under $50' --empty-wardrobe`                                                                   | `No saved wardrobe yet — general styling ideas: For a casual daytime look, pair the cropped denim jacket with a fitted black ribbed tank top and high-waisted wide-leg trousers…` and a normal fit card                                                                                                                                                          | Yes, already: `tools.py::suggest_outfit` asks for general advice |
+| Model unavailable (bad key)                          | Changed one character of `GEMINI_API_KEY`, asked `black leather boots for winter under $70` (never asked before, so not cached) | `ModelUnavailable: The model rejected your API key. Check GEMINI_API_KEY in your .env file, or create a fresh key at aistudio.google.com.` That text only reached the user because `app.py`'s catch-all printed the exception. `run_agent` itself crashed, so the item it had found was thrown away, and `run_eval.py` / `serve.py` would have recorded a crash. | **Added a handler**                                              |
+| Model unavailable (real outage, not triggered by me) | Happened by itself during testing: Gemini returned 503 "high demand"                                                            | `ModelUnavailable: Couldn't reach the model: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. ...` — a raw provider dict, and it suggested nothing to try                                                                                                                                                  | **Added a handler**                                              |
 
 **The handler** — `agent.py::run_agent` catches `ModelUnavailable` around both
 model-calling steps, records it in the trace, and puts a message in
@@ -626,20 +626,20 @@ agent and a passing run was a model call giving up on its first try.
 
 - **Connection failures still aren't retried.** In the after run, criterion 1
   try 4 got two 503s, retried, and then hit a connection failure on the third
-  attempt. Connection errors still fail immediately. *What I'd do:* add them
-  to the retry check. *Why I stopped:* that would have been a second change in
+  attempt. Connection errors still fail immediately. _What I'd do:_ add them
+  to the retry check. _Why I stopped:_ that would have been a second change in
   the same run, and I couldn't have said which one moved the numbers.
 - **An outage longer than ~30 seconds still ends the run.** In the after run,
   criterion 1 try 1 got a 503 on all five attempts (1+2+4+8+16s of waiting)
-  and gave up. *What I'd do:* fall back to a second model name when the first
-  is overloaded, or honour a longer wait for `suggest_outfit` only. *Why I
-  stopped:* raising `MAX_RETRIES` just makes every failed run slower, and the
+  and gave up. _What I'd do:_ fall back to a second model name when the first
+  is overloaded, or honour a longer wait for `suggest_outfit` only. _Why I
+  stopped:_ raising `MAX_RETRIES` just makes every failed run slower, and the
   free tier only allows 15 calls a minute.
 - **Search ties go to data order.** `vintage band tee` returns "Graphic Tee —
   2003 Tour Bootleg Style" over "Vintage Band Tee — Faded Grey". Both score 3,
   and the graphic tee comes first in the file. Criterion 5 can't see this
-  because both are `tops`. *What I'd do:* break ties by how many keywords hit
-  the *title*, and tighten criterion 5 to check the title. *Why I stopped:* it
+  because both are `tops`. _What I'd do:_ break ties by how many keywords hit
+  the _title_, and tighten criterion 5 to check the title. _Why I stopped:_ it
   isn't one of my current misses, and the diagnosis pointed elsewhere.
 - **One listing has the wrong category in the data.** `lst_013` "90s Silk Slip
   Dress" is stored as `bottoms`. Any category check on dresses would fail
@@ -648,7 +648,7 @@ agent and a passing run was a model call giving up on its first try.
 - **The no-results hints can't suggest relaxing two filters at once.** For
   `denim jacket size XS under $20` it tries dropping the size, then the price,
   finds nothing either way, and falls back to "use different words", even
-  though denim jackets exist. *What I'd do:* also try dropping both filters.
+  though denim jackets exist. _What I'd do:_ also try dropping both filters.
 - **MCP is slow.** Each `call_tool` starts `mcp_server.py` as a new process,
   about 3–5 seconds per search, and the empty path makes three. That's fine for
   a CLI, but it will matter behind `serve.py` in unit 9.
@@ -710,9 +710,9 @@ between searches instead of starting a new one per call (`mcp_client.py`).
 
 A — deploy and instrument.
 
-_TODO (Dylan): one paragraph in your own words on what you're adding, and 2–3
-things you decided were out of scope (e.g. no changes to the agent or tools,
-no web page at `/`, no fix for the one-request-at-a-time lock, no paid tier)._
+I added a deployment step and some new criteria to test.
+
+Out of scope: no changes to the agent or tools, as that would be too much work; no web UI as yet (would love to build one); and still no fix to the one-request-at-a-time error, but if I paid then yes.
 
 **Running It**
 
@@ -772,12 +772,12 @@ queries against the deployed service, with the cache off (`AI201_CACHE=0`),
 token counts as Gemini reported them in each log record
 (`results/live_cost_2026-11-17_122807.md`).
 
-| Per run (mean of 10) | |
-|---|---|
-| Model calls | 2.1 |
-| Prompt tokens | 593.3 |
-| Output tokens | 155.9 |
-| Server time | 19.5 s |
+| Per run (mean of 10) |        |
+| -------------------- | ------ |
+| Model calls          | 2.1    |
+| Prompt tokens        | 593.3  |
+| Output tokens        | 155.9  |
+| Server time          | 19.5 s |
 
 At `gemini-3.5-flash-lite`'s paid rates ($0.30 per 1M input tokens, $2.50 per
 1M output tokens, from Google's pricing page on 2026-11-17):
@@ -798,13 +798,13 @@ committed (`5300e3b add capstone criteria`) before these trials ran. Each
 trial is one `python run_live.py --label trialN`: 16 requests against the
 Render URL.
 
-| Criterion | Target | Trial 1 | Trial 2 | Trial 3 | Verdict |
-|---|---|---|---|---|---|
-| 1. Every request leaves a log record | 16 of 16 | 16/16 | 16/16 | 16/16 | MET |
-| 2. Bad input gets a 400 | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
-| 3. Warm fit card within 30 s | 9 of 10 | 9/10 | 10/10 | 10/10 | MET |
-| 4. 10 in a row, no restart | 10/10, one `boot_id` | 10/10 | 10/10 | 10/10 | MET |
-| 5. At most 1,000 tokens per run | 9 of 10 | 10/10 | 10/10 | 10/10 | MET |
+| Criterion                            | Target               | Trial 1 | Trial 2 | Trial 3 | Verdict |
+| ------------------------------------ | -------------------- | ------- | ------- | ------- | ------- |
+| 1. Every request leaves a log record | 16 of 16             | 16/16   | 16/16   | 16/16   | MET     |
+| 2. Bad input gets a 400              | 5 of 5               | 5/5     | 5/5     | 5/5     | MET     |
+| 3. Warm fit card within 30 s         | 9 of 10              | 9/10    | 10/10   | 10/10   | MET     |
+| 4. 10 in a row, no restart           | 10/10, one `boot_id` | 10/10   | 10/10   | 10/10   | MET     |
+| 5. At most 1,000 tokens per run      | 9 of 10              | 10/10   | 10/10   | 10/10   | MET     |
 
 Trial 1 didn't meet criterion 3's "warm" condition: `/health` took 22.3 s
 first, so the instance was waking up, and the first query took 40.4 s, the
@@ -869,20 +869,20 @@ first. Commit `4439456`.
 
 _After, three more trials_ (`results/live_after_trial*`):
 
-| Criterion | Target | Trial 1 | Trial 2 | Trial 3 | Verdict |
-|---|---|---|---|---|---|
-| 1. Every request leaves a log record | 16 of 16 | 16/16 | 16/16 | 16/16 | MET |
-| 2. Bad input gets a 400 | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
-| 3. Warm fit card within 30 s | 9 of 10 | 10/10 | 8/10 | 9/10 | MISSED |
-| 4. 10 in a row, no restart | 10/10, one `boot_id` | 10/10 | 10/10 | 10/10 | MET |
-| 5. At most 1,000 tokens per run | 9 of 10 | 10/10 | 10/10 | 10/10 | MET |
+| Criterion                            | Target               | Trial 1 | Trial 2 | Trial 3 | Verdict |
+| ------------------------------------ | -------------------- | ------- | ------- | ------- | ------- |
+| 1. Every request leaves a log record | 16 of 16             | 16/16   | 16/16   | 16/16   | MET     |
+| 2. Bad input gets a 400              | 5 of 5               | 5/5     | 5/5     | 5/5     | MET     |
+| 3. Warm fit card within 30 s         | 9 of 10              | 10/10   | 8/10    | 9/10    | MISSED  |
+| 4. 10 in a row, no restart           | 10/10, one `boot_id` | 10/10   | 10/10   | 10/10   | MET     |
+| 5. At most 1,000 tokens per run      | 9 of 10              | 10/10   | 10/10   | 10/10   | MET     |
 
-| | Before (3 trials) | After (3 trials) |
-|---|---|---|
-| No-match query | 16.2 / 20.3 / 16.2 s | 0.22 / 0.27 / 0.19 s |
-| Median matching run | 9.2 / 8.8 / 9.7 s | 4.8 / 3.5 / 3.2 s |
-| MCP time per matching run | not logged (several s) | 5–46 ms |
-| Slowest matching run | 40.4 / 22.9 / 27.0 s | 29.3 / 62.3 / 96.7 s |
+|                           | Before (3 trials)      | After (3 trials)     |
+| ------------------------- | ---------------------- | -------------------- |
+| No-match query            | 16.2 / 20.3 / 16.2 s   | 0.22 / 0.27 / 0.19 s |
+| Median matching run       | 9.2 / 8.8 / 9.7 s      | 4.8 / 3.5 / 3.2 s    |
+| MCP time per matching run | not logged (several s) | 5–46 ms              |
+| Slowest matching run      | 40.4 / 22.9 / 27.0 s   | 29.3 / 62.3 / 96.7 s |
 
 _Did it help?_ The median matching run went from ~9 s to ~3.5 s, and the no-match query
 went from 16 s to a fifth of a second. But the slowest runs got much worse,
