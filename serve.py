@@ -64,8 +64,43 @@ def _tag_response(response):
     return response
 
 
+# Changes every time the process starts. Two records with different boot ids
+# had a restart between them — which on Render also means the log file and
+# everything before it is gone.
+BOOT_ID = uuid.uuid4().hex[:6]
+BOOTED = time.monotonic()
+
+
+def _memory() -> dict:
+    """
+    Memory in MB, because the free tier kills the whole instance at 512.
+
+    rss_mb is this process now; peak_rss_mb its high-water mark;
+    child_peak_rss_mb the largest finished child (the MCP server processes).
+    Linux only — on Windows these come out None.
+    """
+    mem = {"rss_mb": None, "peak_rss_mb": None, "child_peak_rss_mb": None}
+    try:
+        import resource  # not on Windows
+
+        # ru_maxrss is in KB on Linux.
+        mem["peak_rss_mb"] = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1)
+        mem["child_peak_rss_mb"] = round(
+            resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024, 1)
+        with open("/proc/self/status", encoding="ascii") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    mem["rss_mb"] = round(int(line.split()[1]) / 1024, 1)
+    except (ImportError, OSError, ValueError):
+        pass
+    return mem
+
+
 def _log(record: dict) -> None:
     """Write one structured record: a line of JSON to stdout and to LOG_FILE."""
+    record["boot_id"] = BOOT_ID
+    record["uptime_s"] = round(time.monotonic() - BOOTED)
+    record.update(_memory())
     line = json.dumps(record, ensure_ascii=False, default=str)
     print(line, flush=True)
     try:
