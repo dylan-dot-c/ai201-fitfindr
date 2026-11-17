@@ -4,6 +4,55 @@ Everything about how the starter works and how to use it.
 
 ---
 
+## Try the live one first (nothing to install)
+
+FitFindr runs at **https://fitfindr-8uv3.onrender.com**. You type what
+secondhand item you want; it finds a matching listing and writes an outfit
+suggestion and a short caption ("fit card"). There's no web page; you talk to
+it with one command.
+
+**1. Wake it up.** It sleeps when nobody's used it for ~15 minutes; the first
+call can take up to a minute.
+
+```bash
+curl https://fitfindr-8uv3.onrender.com/health        # {"status":"ok"} means ready
+```
+
+**2. Ask for something.** Change the text in `"query"`.
+
+macOS / Linux / Git Bash:
+
+```bash
+curl -X POST https://fitfindr-8uv3.onrender.com/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"query": "vintage graphic tee under $30"}'
+```
+
+Windows PowerShell (keep the single quotes, or `$30` disappears):
+
+```powershell
+$r = Invoke-RestMethod 'https://fitfindr-8uv3.onrender.com/ask' -Method Post `
+     -ContentType 'application/json' -Body '{"query": "vintage graphic tee under $30"}'
+$r.error; $r.selected_item.title; $r.outfit_suggestion; $r.fit_card
+```
+
+**3. Read the answer.** Check `error` first: if it isn't `null`, it says why
+nothing came back and what to change. Otherwise look at `selected_item`,
+`outfit_suggestion` and `fit_card`.
+
+**4. See what the server recorded:**
+`https://fitfindr-8uv3.onrender.com/logs?n=5` (opens in a browser).
+
+Things to know: it answers one request at a time, so a second one waits its
+turn; and it's on Gemini's free tier (15 model calls a minute, two per
+request), so if lots of people ask at once, some answers take a minute or
+more.
+
+Ideas: `denim jacket size S`, `cargo pants under $40`, `black jacket`,
+`leather bag`. Size and price are optional.
+
+---
+
 ## Before your first class
 
 Setup happens **before class**. The [environment setup page](../pages/ide_setup)
