@@ -83,6 +83,7 @@ does nothing.
 | `python mcp_client.py` | Asks the server what it offers — **unit 4** |
 | `python run_eval.py --label before` | Runs every scenario five times and writes the run log — **unit 4** |
 | `python serve.py` | Serves the agent over HTTP instead of exiting — **unit 9** |
+| `python run_live.py --label X` | Sends a mix of good and bad requests to the deployed URL, matches each to its server log record, and writes `results/live_X_*.md` — **capstone**. `--only ok -n 10`, `--parallel 3`, `--query '...'`, `--url` |
 
 Useful flags on `ask`:
 
