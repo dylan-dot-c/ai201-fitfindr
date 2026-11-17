@@ -690,3 +690,240 @@ agent and a passing run was a model call giving up on its first try.
 ---
 
 📖 **How to run this project: [RUNNING.md](RUNNING.md)**
+
+---
+
+## Capstone
+
+**What This Extends**
+
+FitFindr, the agent from units 3–4: a user types what secondhand item they want
+and gets a matching listing, an outfit suggestion and a fit card. The agent
+itself is unchanged. What's new is that it runs on Render at
+https://fitfindr-8uv3.onrender.com instead of only from `python app.py`, every
+request writes a structured JSON log record (`serve.py::_log`), and
+`run_live.py` drives the deployed service and matches each response to its
+log record. The one improvement made this unit keeps the MCP server running
+between searches instead of starting a new one per call (`mcp_client.py`).
+
+**The Shape**
+
+A — deploy and instrument.
+
+_TODO (Dylan): one paragraph in your own words on what you're adding, and 2–3
+things you decided were out of scope (e.g. no changes to the agent or tools,
+no web page at `/`, no fix for the one-request-at-a-time lock, no paid tier)._
+
+**Running It**
+
+Path A, hosted on Render's free tier: https://fitfindr-8uv3.onrender.com.
+The service is defined in [render.yaml](render.yaml); setup, routes and every
+log field are in [RUNNING.md](RUNNING.md). Routes: `POST /ask`,
+`GET /health`, `GET /logs?n=20`.
+
+The first deploy fell over after 2–4 requests. Render's health check calls
+`/health`, and with a single sync gunicorn worker busy on a 20–50 s agent run,
+nothing answered it. Render decided the app was dead and restarted it, which
+also wiped the log. Probing `/health` every 3 s during an `/ask` showed it
+timing out from t+3 s and the instance going down at about t+12 s. Starting
+gunicorn with `--threads 4` fixed it; the same probe afterwards answered in
+~0.2 s throughout. The runs from before the fix are kept as
+`results/live_*_BEFORE-threads-fix_*`.
+
+**Instrumentation**
+
+Every `/ask` request, answered, rejected (400) or crashed (500), writes one
+JSON record from `serve.py::_log` to stdout (kept by Render's Logs tab) and to
+`logs/requests.jsonl` (read back by `GET /logs`, because the free instance
+wipes its disk when it sleeps). Each record holds: `ts`, `request_id` (also
+returned as the `X-Request-Id` header), `query`, `status`, `outcome`
+(`ok` / `no_results` / `model_error` / `rejected` / `crash`), `error`, what
+came out (`selected_id`, `selected_price`, `fit_card_chars`), spend
+(`model_calls`, `prompt_tokens`, `output_tokens`), timing (`queue_wait_ms`,
+`agent_ms`, `duration_ms`), `boot_id` and `uptime_s` (a new `boot_id` means
+the instance restarted), and memory (`rss_mb`). After the improvement,
+records also carry `mcp_calls`, `mcp_ms` and `mcp_persistent`.
+
+All 14 records from `results/live_instrumentation_2026-11-17_122446.md`: 10
+matching queries, 1 query that matches nothing, and 3 rejected bad inputs
+(the failed runs, status 400).
+
+```
+{"agent_ms": 6584, "boot_id": "c7da3a", "cache_enabled": false, "child_peak_rss_mb": 100.1, "duration_ms": 6584, "error": null, "fit_card_chars": 256, "model": "gemini-3.5-flash-lite", "model_calls": 2, "outcome": "ok", "output_tokens": 161, "parsed": {"description": "vintage graphic tee", "max_price": 30.0, "size": null}, "peak_rss_mb": 100.1, "prompt_tokens": 589, "query": "vintage graphic tee under $30", "queue_wait_ms": 0, "request_id": "fad636d6", "results": 10, "rss_mb": 100.7, "selected_id": "lst_002", "selected_price": 18.0, "status": 200, "ts": "2026-11-17T17:20:49.025+00:00", "uptime_s": 477, "wardrobe_items": 10}
+{"agent_ms": 10913, "boot_id": "c7da3a", "cache_enabled": false, "child_peak_rss_mb": 100.1, "duration_ms": 10913, "error": null, "fit_card_chars": 218, "model": "gemini-3.5-flash-lite", "model_calls": 2, "outcome": "ok", "output_tokens": 135, "parsed": {"description": "denim jacket", "max_price": 50.0, "size": null}, "peak_rss_mb": 100.1, "prompt_tokens": 566, "query": "denim jacket under $50", "queue_wait_ms": 0, "request_id": "b682eae9", "results": 7, "rss_mb": 100.7, "selected_id": "lst_007", "selected_price": 42.0, "status": 200, "ts": "2026-11-17T17:20:55.926+00:00", "uptime_s": 488, "wardrobe_items": 10}
+{"agent_ms": 12902, "boot_id": "c7da3a", "cache_enabled": false, "child_peak_rss_mb": 100.1, "duration_ms": 12903, "error": null, "fit_card_chars": 276, "model": "gemini-3.5-flash-lite", "model_calls": 3, "outcome": "ok", "output_tokens": 178, "parsed": {"description": "90s track jacket", "max_price": null, "size": "M"}, "peak_rss_mb": 100.1, "prompt_tokens": 605, "query": "90s track jacket size M", "queue_wait_ms": 1, "request_id": "934a1612", "results": 5, "rss_mb": 100.7, "selected_id": "lst_004", "selected_price": 45.0, "status": 200, "ts": "2026-11-17T17:21:06.987+00:00", "uptime_s": 501, "wardrobe_items": 10}
+{"agent_ms": 16839, "boot_id": "c7da3a", "cache_enabled": false, "child_peak_rss_mb": 100.1, "duration_ms": 16839, "error": null, "fit_card_chars": 187, "model": "gemini-3.5-flash-lite", "model_calls": 2, "outcome": "ok", "output_tokens": 159, "parsed": {"description": "silk slip dress", "max_price": 40.0, "size": null}, "peak_rss_mb": 100.1, "prompt_tokens": 614, "query": "silk slip dress under $40", "queue_wait_ms": 0, "request_id": "76ebec83", "results": 2, "rss_mb": 100.7, "selected_id": "lst_013", "selected_price": 30.0, "status": 200, "ts": "2026-11-17T17:21:20.048+00:00", "uptime_s": 518, "wardrobe_items": 10}
+{"agent_ms": 15805, "boot_id": "c7da3a", "cache_enabled": false, "child_peak_rss_mb": 100.1, "duration_ms": 15805, "error": null, "fit_card_chars": 216, "model": "gemini-3.5-flash-lite", "model_calls": 2, "outcome": "ok", "output_tokens": 121, "parsed": {"description": "platform sneakers", "max_price": null, "size": "8"}, "peak_rss_mb": 100.1, "prompt_tokens": 554, "query": "platform sneakers size 8", "queue_wait_ms": 0, "request_id": "061f4f10", "results": 1, "rss_mb": 100.7, "selected_id": "lst_019", "selected_price": 48.0, "status": 200, "ts": "2026-11-17T17:21:37.038+00:00", "uptime_s": 534, "wardrobe_items": 10}
+{"agent_ms": 17497, "boot_id": "c7da3a", "cache_enabled": false, "child_peak_rss_mb": 100.1, "duration_ms": 17497, "error": null, "fit_card_chars": 211, "model": "gemini-3.5-flash-lite", "model_calls": 2, "outcome": "ok", "output_tokens": 188, "parsed": {"description": "cargo pants", "max_price": 40.0, "size": null}, "peak_rss_mb": 100.1, "prompt_tokens": 625, "query": "cargo pants under $40", "queue_wait_ms": 0, "request_id": "2f4daa7e", "results": 2, "rss_mb": 100.7, "selected_id": "lst_011", "selected_price": 27.0, "status": 200, "ts": "2026-11-17T17:21:52.992+00:00", "uptime_s": 552, "wardrobe_items": 10}
+{"agent_ms": 31926, "boot_id": "c7da3a", "cache_enabled": false, "child_peak_rss_mb": 100.1, "duration_ms": 31926, "error": null, "fit_card_chars": 228, "model": "gemini-3.5-flash-lite", "model_calls": 2, "outcome": "ok", "output_tokens": 172, "parsed": {"description": "baggy jeans", "max_price": null, "size": null}, "peak_rss_mb": 100.2, "prompt_tokens": 607, "query": "baggy jeans", "queue_wait_ms": 0, "request_id": "fd525ce2", "results": 3, "rss_mb": 100.7, "selected_id": "lst_031", "selected_price": 36.0, "status": 200, "ts": "2026-11-17T17:22:10.795+00:00", "uptime_s": 584, "wardrobe_items": 10}
+{"agent_ms": 16341, "boot_id": "c7da3a", "cache_enabled": false, "child_peak_rss_mb": 100.2, "duration_ms": 16341, "error": null, "fit_card_chars": 194, "model": "gemini-3.5-flash-lite", "model_calls": 2, "outcome": "ok", "output_tokens": 171, "parsed": {"description": "leather bag", "max_price": null, "size": null}, "peak_rss_mb": 100.2, "prompt_tokens": 596, "query": "leather bag", "queue_wait_ms": 0, "request_id": "57fa5807", "results": 4, "rss_mb": 100.8, "selected_id": "lst_039", "selected_price": 38.0, "status": 200, "ts": "2026-11-17T17:22:42.892+00:00", "uptime_s": 600, "wardrobe_items": 10}
+{"agent_ms": 77373, "boot_id": "c7da3a", "cache_enabled": false, "child_peak_rss_mb": 100.2, "duration_ms": 77373, "error": null, "fit_card_chars": 212, "model": "gemini-3.5-flash-lite", "model_calls": 3, "outcome": "ok", "output_tokens": 187, "parsed": {"description": "black jacket", "max_price": null, "size": null}, "peak_rss_mb": 100.2, "prompt_tokens": 610, "query": "black jacket", "queue_wait_ms": 0, "request_id": "251db922", "results": 10, "rss_mb": 100.8, "selected_id": "lst_022", "selected_price": 75.0, "status": 200, "ts": "2026-11-17T17:22:59.401+00:00", "uptime_s": 678, "wardrobe_items": 10}
+{"agent_ms": 17159, "boot_id": "c7da3a", "cache_enabled": false, "child_peak_rss_mb": 100.2, "duration_ms": 17161, "error": null, "fit_card_chars": 167, "model": "gemini-3.5-flash-lite", "model_calls": 2, "outcome": "ok", "output_tokens": 124, "parsed": {"description": "white sneakers", "max_price": null, "size": null}, "peak_rss_mb": 100.2, "prompt_tokens": 567, "query": "white sneakers", "queue_wait_ms": 2, "request_id": "d92aa3b7", "results": 6, "rss_mb": 100.8, "selected_id": "lst_019", "selected_price": 48.0, "status": 200, "ts": "2026-11-17T17:24:16.938+00:00", "uptime_s": 695, "wardrobe_items": 10}
+{"agent_ms": 12913, "boot_id": "c7da3a", "cache_enabled": false, "child_peak_rss_mb": 100.3, "duration_ms": 12914, "error": "Nothing matched \"designer ballgown\" in size XXS under $5. Try: use different words for the item — the listings use terms like tee, hoodie, jeans, cargo pants, jacket, boots and bag.", "fit_card_chars": 0, "model": "gemini-3.5-flash-lite", "model_calls": 0, "outcome": "no_results", "output_tokens": 0, "parsed": {"description": "designer ballgown", "max_price": 5.0, "size": "XXS"}, "peak_rss_mb": 100.3, "prompt_tokens": 0, "query": "designer ballgown size XXS under $5", "queue_wait_ms": 0, "request_id": "975a6dec", "results": 0, "rss_mb": 100.8, "selected_id": null, "selected_price": null, "status": 200, "ts": "2026-11-17T17:24:34.295+00:00", "uptime_s": 708, "wardrobe_items": 10}
+{"boot_id": "c7da3a", "cache_enabled": false, "child_peak_rss_mb": 100.3, "duration_ms": 0, "error": "missing 'query'", "model": "gemini-3.5-flash-lite", "outcome": "rejected", "peak_rss_mb": 100.3, "query": null, "request_id": "a6621abf", "rss_mb": 100.8, "status": 400, "ts": "2026-11-17T17:24:47.450+00:00", "uptime_s": 709}
+{"boot_id": "c7da3a", "cache_enabled": false, "child_peak_rss_mb": 100.3, "duration_ms": 0, "error": "missing 'query'", "model": "gemini-3.5-flash-lite", "outcome": "rejected", "peak_rss_mb": 100.3, "query": null, "request_id": "fa0ba82b", "rss_mb": 100.8, "status": 400, "ts": "2026-11-17T17:24:47.589+00:00", "uptime_s": 709}
+{"boot_id": "c7da3a", "cache_enabled": false, "child_peak_rss_mb": 100.3, "duration_ms": 0, "error": "missing 'query'", "model": "gemini-3.5-flash-lite", "outcome": "rejected", "peak_rss_mb": 100.3, "query": null, "request_id": "bd2aad50", "rss_mb": 100.8, "status": 400, "ts": "2026-11-17T17:24:47.775+00:00", "uptime_s": 709}
+```
+
+**What It Costs**
+
+Measured with `python run_live.py --label cost --only ok -n 10`: ten matching
+queries against the deployed service, with the cache off (`AI201_CACHE=0`),
+token counts as Gemini reported them in each log record
+(`results/live_cost_2026-11-17_122807.md`).
+
+| Per run (mean of 10) | |
+|---|---|
+| Model calls | 2.1 |
+| Prompt tokens | 593.3 |
+| Output tokens | 155.9 |
+| Server time | 19.5 s |
+
+At `gemini-3.5-flash-lite`'s paid rates ($0.30 per 1M input tokens, $2.50 per
+1M output tokens, from Google's pricing page on 2026-11-17):
+
+- One run: 593.3 × $0.30/1M + 155.9 × $2.50/1M = $0.000178 + $0.000390 = **$0.00057**
+- 100 people a day, one run each: 100 × $0.00057 = **$0.057 a day**, about
+  $1.70 for 30 days
+- In calls: 100 × 2.1 = 210 model calls a day
+
+On the free tier this project actually runs on, the dollar cost is $0. The
+real limit is 15 model calls a minute, which caps the service at about 7 runs
+a minute however many people are asking.
+
+**Run Log and Verdicts**
+
+Criteria are in [criteria.md](criteria.md) under "Capstone criteria",
+committed (`5300e3b add capstone criteria`) before these trials ran. Each
+trial is one `python run_live.py --label trialN`: 16 requests against the
+Render URL.
+
+| Criterion | Target | Trial 1 | Trial 2 | Trial 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. Every request leaves a log record | 16 of 16 | 16/16 | 16/16 | 16/16 | MET |
+| 2. Bad input gets a 400 | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 3. Warm fit card within 30 s | 9 of 10 | 9/10 | 10/10 | 10/10 | MET |
+| 4. 10 in a row, no restart | 10/10, one `boot_id` | 10/10 | 10/10 | 10/10 | MET |
+| 5. At most 1,000 tokens per run | 9 of 10 | 10/10 | 10/10 | 10/10 | MET |
+
+Trial 1 didn't meet criterion 3's "warm" condition: `/health` took 22.3 s
+first, so the instance was waking up, and the first query took 40.4 s, the
+only run over 30 s in the three trials. Counted anyway, it's 9 of 10, which
+still meets the target. All three trials ran on one instance (`boot_id`
+`d342f2`). The highest token count across all 30 runs was 817.
+
+Real output from trial 2 (`results/live_trial2_2026-11-17_140202.md`, written
+by `run_live.py::write`; the server columns come from `serve.py::_log`):
+
+Criteria 1 and 4:
+
+```
+- With a matching server log record: 16 of 16
+- Server boot ids seen (more than one = it restarted): ['d342f2']
+```
+
+Criteria 3, 4 and 5 (the 10 matching queries):
+
+```
+| # | kind | request body | HTTP | client ms | server outcome | server ms | queue ms | fit card | calls | tokens in/out | rss MB | child peak MB |
+| 1 | ok | `{"query": "vintage graphic tee under $30"}` | 200 | 11116 | ok | 10967 | 0 | yes | 2 | 596/162 | 117.8 | 117.1 |
+| 2 | ok | `{"query": "denim jacket under $50"}` | 200 | 9242 | ok | 9083 | 1 | yes | 2 | 565/133 | 117.8 | 117.1 |
+| 3 | ok | `{"query": "90s track jacket size M"}` | 200 | 8819 | ok | 8644 | 1 | yes | 2 | 607/157 | 117.8 | 117.1 |
+| 4 | ok | `{"query": "silk slip dress under $40"}` | 200 | 8436 | ok | 8121 | 0 | yes | 2 | 622/176 | 117.8 | 117.1 |
+| 5 | ok | `{"query": "platform sneakers size 8"}` | 200 | 8469 | ok | 8315 | 0 | yes | 2 | 604/174 | 117.8 | 117.1 |
+| 6 | ok | `{"query": "cargo pants under $40"}` | 200 | 8024 | ok | 7872 | 0 | yes | 2 | 605/161 | 117.8 | 117.3 |
+| 7 | ok | `{"query": "baggy jeans"}` | 200 | 8730 | ok | 8567 | 0 | yes | 2 | 616/175 | 117.8 | 117.3 |
+| 8 | ok | `{"query": "leather bag"}` | 200 | 7330 | ok | 7163 | 0 | yes | 2 | 593/160 | 117.8 | 117.3 |
+| 9 | ok | `{"query": "black jacket"}` | 200 | 17129 | ok | 16953 | 0 | yes | 2 | 610/191 | 117.9 | 117.3 |
+| 10 | ok | `{"query": "white sneakers"}` | 200 | 22924 | ok | 22589 | 0 | yes | 2 | 587/150 | 117.9 | 117.3 |
+```
+
+Criterion 2 (the 5 bad inputs), and one of their log records:
+
+```
+| # | kind | request body | HTTP | client ms | server outcome | server ms | queue ms | fit card | calls | tokens in/out | rss MB | child peak MB |
+| 12 | bad_input | `{}` | 400 | 169 | rejected | 0 | - | no | - | - | 112.5 | 117.3 |
+| 13 | bad_input | `{"query": "   "}` | 400 | 205 | rejected | 0 | - | no | - | - | 112.5 | 117.3 |
+| 14 | bad_input | `this is not json` | 400 | 199 | rejected | 0 | - | no | - | - | 112.5 | 117.3 |
+| 15 | bad_input | `{"query": null}` | 400 | 129 | rejected | 0 | - | no | - | - | 112.5 | 117.3 |
+| 16 | bad_input | `{"query": 123}` | 400 | 154 | rejected | 0 | - | no | - | - | 112.5 | 117.3 |
+{"boot_id": "d342f2", "cache_enabled": false, "child_peak_rss_mb": 117.3, "duration_ms": 0, "error": "missing 'query'", "model": "gemini-3.5-flash-lite", "outcome": "rejected", "peak_rss_mb": 117.3, "query": null, "request_id": "9d843923", "rss_mb": 112.5, "status": 400, "ts": "2026-11-17T19:02:04.132+00:00", "uptime_s": 285}
+```
+
+**The Improvement**
+
+_What the trials showed._ The query that matches nothing made zero model calls
+but still took 16–20 s in every trial. All it does is search, three times
+(the search plus two hint searches with a filter dropped), through MCP. Every
+`mcp_client.call_tool` started a new `mcp_server.py` process, connected,
+listed the tools, made one call and stopped it; on Render's free-tier CPU that
+came to several seconds per search. Every matching run paid it once too.
+
+_The change._ `mcp_client.call_tool` now starts the server once per process
+and keeps the session open on a background event-loop thread
+(`_PersistentSession`). Same signature, same return value, so `agent.py`
+didn't change. If the server process dies, the next call starts a new one
+(tested locally by killing it mid-session). `AI201_MCP_PERSISTENT=0` restores
+the old behaviour. Locally, a search went from ~900 ms to ~4 ms after the
+first. Commit `4439456`.
+
+_After, three more trials_ (`results/live_after_trial*`):
+
+| Criterion | Target | Trial 1 | Trial 2 | Trial 3 | Verdict |
+|---|---|---|---|---|---|
+| 1. Every request leaves a log record | 16 of 16 | 16/16 | 16/16 | 16/16 | MET |
+| 2. Bad input gets a 400 | 5 of 5 | 5/5 | 5/5 | 5/5 | MET |
+| 3. Warm fit card within 30 s | 9 of 10 | 10/10 | 8/10 | 9/10 | MISSED |
+| 4. 10 in a row, no restart | 10/10, one `boot_id` | 10/10 | 10/10 | 10/10 | MET |
+| 5. At most 1,000 tokens per run | 9 of 10 | 10/10 | 10/10 | 10/10 | MET |
+
+| | Before (3 trials) | After (3 trials) |
+|---|---|---|
+| No-match query | 16.2 / 20.3 / 16.2 s | 0.22 / 0.27 / 0.19 s |
+| Median matching run | 9.2 / 8.8 / 9.7 s | 4.8 / 3.5 / 3.2 s |
+| MCP time per matching run | not logged (several s) | 5–46 ms |
+| Slowest matching run | 40.4 / 22.9 / 27.0 s | 29.3 / 62.3 / 96.7 s |
+
+_Did it help?_ The median matching run went from ~9 s to ~3.5 s, and the no-match query
+went from 16 s to a fifth of a second. But the slowest runs got much worse,
+and criterion 3 went from MET to MISSED (8 of 10 in after-trial 2).
+
+_Why criterion 3 now misses._ The stage is `generate.py::_wait_for_slot`, the
+rate limiter that keeps the agent under Gemini's free-tier 15 calls a minute.
+Each run makes 2 calls, so 15 calls a minute is about 7 runs a minute. Before
+the fix, starting a new MCP server for every search held runs to ~9 s each,
+which kept them just under that by accident. At ~3 s a run, 7–8 back-to-back
+runs use up the minute, and the next run's second call waits for the window to
+clear. Model calls in the 60 s before each slow run, from the after-trial log
+records:
+
+```
+19:13:06 UTC  calls in prior 60 s: 14  this run:  29.3 s  leather bag
+19:13:52 UTC  calls in prior 60 s: 14  this run:  50.7 s  denim jacket under $50
+19:14:53 UTC  calls in prior 60 s:  4  this run:  62.3 s  platform sneakers size 8
+19:16:15 UTC  calls in prior 60 s: 14  this run:  96.7 s  90s track jacket size M
+```
+
+Three of the four slow runs started with exactly 14 calls already made, so
+their second call was the 16th. The fourth (62.3 s) had only a few calls
+before it, but the run before it made 3 calls instead of 2, meaning Gemini
+pushed back and `generate.py` retried; that one is Google's limit rather than
+the local one. This part is inferred: the log doesn't record how long the
+limiter waited.
+
+**What's Still Broken**
+
+_TODO (Dylan), in your own words. Facts you can use: criterion 3 is missed
+after the improvement because of the rate limiter (above); the limiter's wait
+isn't logged, so the diagnosis is partly inferred; criterion 5 never came
+close to failing (highest of 60 runs: 827 tokens against 1,000), so say what
+you'd tighten it to; the one thing you'd do first with another unit, and why
+that one._
+
+**How I Used AI**
+
+_TODO (Dylan): two specific moments — what you asked, what you got, what you
+changed. For example: Claude added the logging, render.yaml and run_live.py,
+and found the health-check restart; you wrote the five criteria's targets
+and reasons and Claude added the testing details (which inputs, where each
+number is read)._
