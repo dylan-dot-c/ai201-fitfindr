@@ -136,3 +136,68 @@ few right answers to find.
      A number you missed stays where it is, gets diagnosed, and gets a fix
      attempted. That's where the points are.
      ───────────────────────────────────────────────────────────────────────── -->
+
+---
+
+# Capstone criteria
+
+Written before any capstone trial was run. Every criterion is checked against
+the deployed service at https://fitfindr-8uv3.onrender.com with
+`python run_live.py --label trialN`, three trials. One trial sends 16
+requests: 10 matching queries, 1 query that matches nothing, and the 5 bad
+inputs listed in criterion 2.
+
+## 1. Every request leaves a log record
+
+Each trial sends the `run_live.py` mix to the Render URL: 10 matching queries,
+1 query that matches nothing, and the 5 bad inputs from criterion 2.
+
+**Target: 16 of 16** requests have a record in `GET /logs` whose `request_id`
+matches the response's `X-Request-Id` header, failed requests included. A 502
+from Render counts as a miss, because that request got no record.
+
+**Why:** Failed requests need to be recorded too so that errors can be tracked
+and debugged.
+
+## 2. Bad input gets a 400
+
+Each trial sends these 5 bodies to `POST /ask`: `{}`, `{"query": "   "}`,
+`this is not json`, `{"query": null}`, `{"query": 123}`.
+
+**Target: 5 of 5** return HTTP 400 with an `error` field, never a 500 or 502.
+
+**Why:** Users should receive a clear error instead of the server crashing or
+processing invalid information.
+
+## 3. A warm request gets a fit card within 30 seconds
+
+With the server warm (`/health` answers in under 5 s first), each trial sends
+the 10 matching queries one at a time.
+
+**Target: at least 9 of 10** return HTTP 200 with a non-empty `fit_card` within
+30 seconds, timed by the client (the "client ms" column). A run with no fit
+card counts as a miss.
+
+**Why:** Most of the previous runs took 15–20 seconds, and users should not
+have to wait excessively long.
+
+## 4. Ten requests in a row without a restart
+
+The same 10 matching queries, sent back to back.
+
+**Target: 10 of 10** return HTTP 200 **and** all 10 log records share one
+`boot_id`. One 502 or a second `boot_id` fails the trial.
+
+**Why:** The previous deployment restarted after only 2–4 requests, making the
+application unreliable.
+
+## 5. A run costs at most 1,000 tokens
+
+For the same 10 matching queries, total tokens means
+`prompt_tokens + output_tokens` from each log record.
+
+**Target: at least 9 of 10** runs use 1,000 tokens or fewer.
+
+**Why:** The measured average was approximately 749 tokens, and keeping usage
+below 1,000 leaves some room for variation without making the application
+unnecessarily expensive.
