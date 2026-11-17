@@ -68,9 +68,11 @@ def _http(method: str, url: str, body: str | None = None, timeout: float = 200.0
         req.add_header("Content-Type", "application/json")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.status, dict(resp.headers), resp.read().decode("utf-8")
+            return resp.status, resp.headers, resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
-        return exc.code, dict(exc.headers), exc.read().decode("utf-8", "replace")
+        # headers stay a Message, not a dict: Render sends them lowercased
+        # (x-request-id) and Message lookups ignore case.
+        return exc.code, exc.headers, exc.read().decode("utf-8", "replace")
 
 
 def send(base: str, spec: dict) -> dict:
