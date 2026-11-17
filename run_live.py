@@ -150,8 +150,15 @@ def main() -> int:
             print(f"  {row['status']}  {row['client_ms']:>6} ms  {row['kind']:<9} {row['body'][:50]}")
 
     # Match each request to its server record.
-    _, _, text = _http("GET", f"{base}/logs?n=200")
-    server = {r.get("request_id"): r for r in json.loads(text)}
+    # If the instance restarted mid-run, /logs may be a 502 page or an empty
+    # list. That's a result, not a reason to lose the client-side rows.
+    try:
+        status, _, text = _http("GET", f"{base}/logs?n=200")
+        server = {r.get("request_id"): r for r in json.loads(text)}
+    except Exception as exc:  # noqa: BLE001
+        print(f"  could not read /logs ({exc}); every row will say NOT LOGGED",
+              file=sys.stderr)
+        server = {}
     for row in rows:
         row["server"] = server.get(row["request_id"])
 
@@ -183,9 +190,11 @@ def write(args, base: str, health_ms: int, rows: list[dict]) -> None:
         f"- `/health` before the run: {health_ms} ms",
         f"- Requests: {len(rows)}, {args.parallel} at a time",
         f"- With a matching server log record: {len(logged)} of {len(rows)}",
+        f"- Server boot ids seen (more than one = it restarted): "
+        f"{sorted({r['server'].get('boot_id') for r in logged}) or '-'}",
         "",
-        "| # | kind | request body | HTTP | client ms | server outcome | server ms | queue ms | calls | tokens in/out |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| # | kind | request body | HTTP | client ms | server outcome | server ms | queue ms | calls | tokens in/out | rss MB | child peak MB |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for i, r in enumerate(rows, 1):
         s = r["server"] or {}
@@ -195,7 +204,8 @@ def write(args, base: str, health_ms: int, rows: list[dict]) -> None:
         lines.append(
             f"| {i} | {r['kind']} | `{body}` | {r['status']} | {r['client_ms']} | "
             f"{s.get('outcome', 'NOT LOGGED')} | {s.get('duration_ms', '-')} | "
-            f"{s.get('queue_wait_ms', '-')} | {s.get('model_calls', '-')} | {tokens} |"
+            f"{s.get('queue_wait_ms', '-')} | {s.get('model_calls', '-')} | {tokens} | "
+            f"{s.get('rss_mb', '-')} | {s.get('child_peak_rss_mb', '-')} |"
         )
     lines += [
         "",
