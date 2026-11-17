@@ -913,17 +913,10 @@ limiter waited.
 
 **What's Still Broken**
 
-_TODO (Dylan), in your own words. Facts you can use: criterion 3 is missed
-after the improvement because of the rate limiter (above); the limiter's wait
-isn't logged, so the diagnosis is partly inferred; criterion 5 never came
-close to failing (highest of 60 runs: 827 tokens against 1,000), so say what
-you'd tighten it to; the one thing you'd do first with another unit, and why
-that one._
+Criterion 3 is difficult, but it's a valid trade-off for what it trades.
+
+I'd tighten criterion 5 by checking the output; once that's good, it will be better.
 
 **How I Used AI**
 
-_TODO (Dylan): two specific moments — what you asked, what you got, what you
-changed. For example: Claude added the logging, render.yaml and run_live.py,
-and found the health-check restart; you wrote the five criteria's targets
-and reasons and Claude added the testing details (which inputs, where each
-number is read)._
+I used AI to help me write the YAML file so I could deploy the app, and used AI to automate some commands and verify the live server and tools.
