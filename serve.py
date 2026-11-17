@@ -48,6 +48,7 @@ import config  # noqa: F401
 from flask import Flask, g, jsonify, request
 
 import generate
+import mcp_client
 from agent import run_agent
 from utils.data_loader import get_example_wardrobe
 
@@ -246,6 +247,7 @@ def ask():
         lock_acquired = time.perf_counter()
         calls_before = generate.call_count()
         tokens_before = generate.token_counts()
+        mcp_before = mcp_client.stats()
         try:
             session = run_agent(query, wardrobe)
         except Exception as exc:  # noqa: BLE001 — a 500 with a sentence beats a hang
@@ -255,6 +257,10 @@ def ask():
         record["model_calls"] = generate.call_count() - calls_before
         record["prompt_tokens"] = tokens_after["prompt"] - tokens_before["prompt"]
         record["output_tokens"] = tokens_after["output"] - tokens_before["output"]
+        mcp_after = mcp_client.stats()
+        record["mcp_calls"] = mcp_after["calls"] - mcp_before["calls"]
+        record["mcp_ms"] = mcp_after["ms"] - mcp_before["ms"]
+        record["mcp_persistent"] = mcp_client.PERSISTENT
 
     # Outside the lock: building a response is not work the next caller should
     # be waiting on.

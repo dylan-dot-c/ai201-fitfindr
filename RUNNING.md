@@ -205,6 +205,18 @@ session.
 | `parsed`, `results`, `selected_id`, `selected_price`, `fit_card_chars` | What came out |
 | `model_calls`, `prompt_tokens`, `output_tokens` | This request's spend, as reported by Gemini |
 | `queue_wait_ms`, `agent_ms`, `duration_ms` | Time waiting for the lock, time in `run_agent()`, total |
+| `mcp_calls`, `mcp_ms`, `mcp_persistent` | MCP searches this request made, the time spent in them, and whether the MCP server was kept running between calls |
+| `boot_id`, `uptime_s` | Changes on every process start; a different `boot_id` between two records means the instance restarted |
+| `rss_mb`, `peak_rss_mb`, `child_peak_rss_mb` | Memory in MB (Linux only). The free tier's limit is 512 |
+
+### The MCP server stays running (capstone improvement)
+
+`mcp_client.call_tool` used to start `mcp_server.py`, make one call and stop
+it, every time. On Render's free tier that cost about 8 s per search. It now
+starts the server once per process and keeps the session open on a background
+thread; if the server dies, the next call starts a new one. Set
+`AI201_MCP_PERSISTENT=0` (in `.env`, or in Render's environment) to get the
+old one-process-per-call behaviour back.
 
 ---
 
